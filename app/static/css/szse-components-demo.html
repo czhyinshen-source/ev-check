@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>深交所设计系统 - 组件示例</title>
+    <link rel="stylesheet" href="szse-design-system.css">
+    <style>
+        .demo-section {
+            margin-bottom: 40px;
+        }
+        .demo-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: var(--szse-blue);
+        }
+        .demo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- 顶部导航栏示例 -->
+    <header class="szse-header">
+        <img src="/static/images/logo.png" alt="Logo" class="szse-header__logo" onerror="this.style.display='none'">
+        <span class="szse-header__title">运行环境检查系统</span>
+        <nav class="szse-header__menu">
+            <a href="#" class="szse-header__menu-item">环境检查</a>
+            <a href="#" class="szse-header__menu-item">检查规则</a>
+            <a href="#" class="szse-header__menu-item">快照</a>
+            <a href="#" class="szse-header__menu-item">通信机</a>
+            <a href="#" class="szse-header__menu-item szse-header__menu-item--active">系统配置</a>
+        </nav>
+    </header>
+
+    <div class="szse-main">
+        <!-- 按钮组件示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">按钮组件</h2>
+            <div class="szse-flex szse-gap-md">
+                <button class="szse-button szse-button--primary">主按钮</button>
+                <button class="szse-button szse-button--secondary">次按钮</button>
+                <button class="szse-button szse-button--text">文字按钮</button>
+                <button class="szse-button szse-button--primary szse-button--small">小按钮</button>
+                <button class="szse-button szse-button--primary szse-button--large">大按钮</button>
+            </div>
+        </section>
+
+        <!-- 状态指示器示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">状态指示器</h2>
+            <div class="szse-flex szse-gap-md">
+                <div class="szse-status szse-status--success">
+                    <span class="szse-status__dot"></span>
+                    <span>成功</span>
+                </div>
+                <div class="szse-status szse-status--warning">
+                    <span class="szse-status__dot"></span>
+                    <span>警告</span>
+                </div>
+                <div class="szse-status szse-status--error">
+                    <span class="szse-status__dot"></span>
+                    <span>错误</span>
+                </div>
+                <div class="szse-status szse-status--info">
+                    <span class="szse-status__dot"></span>
+                    <span>信息</span>
+                </div>
+                <div class="szse-status szse-status--unknown">
+                    <span class="szse-status__dot"></span>
+                    <span>未知</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- 标签组件示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">标签组件</h2>
+            <div class="szse-flex szse-gap-md">
+                <span class="szse-tag szse-tag--success">成功</span>
+                <span class="szse-tag szse-tag--warning">警告</span>
+                <span class="szse-tag szse-tag--error">错误</span>
+                <span class="szse-tag szse-tag--info">信息</span>
+            </div>
+        </section>
+
+        <!-- 卡片组件示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">卡片组件</h2>
+            <div class="demo-grid">
+                <div class="szse-card">
+                    <div class="szse-card__header">卡片标题</div>
+                    <div class="szse-card__body">
+                        <p>这是卡片内容区域。</p>
+                        <p>可以放置各种信息和控件。</p>
+                    </div>
+                    <div class="szse-card__footer">
+                        <button class="szse-button szse-button--primary szse-button--small">操作</button>
+                    </div>
+                </div>
+
+                <div class="szse-card">
+                    <div class="szse-card__header">统计信息</div>
+                    <div class="szse-card__body">
+                        <div class="szse-flex-between">
+                            <span>通信机总数:</span>
+                            <strong>10</strong>
+                        </div>
+                        <div class="szse-flex-between szse-mt-sm">
+                            <span>在线:</span>
+                            <span class="szse-text-success">8</span>
+                        </div>
+                        <div class="szse-flex-between szse-mt-sm">
+                            <span>离线:</span>
+                            <span class="szse-text-error">2</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 表格组件示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">表格组件</h2>
+            <div class="szse-card">
+                <div class="szse-card__body">
+                    <table class="szse-table szse-table--striped szse-table--hoverable">
+                        <thead>
+                            <tr>
+                                <th>通信机名称</th>
+                                <th>IP 地址</th>
+                                <th>状态</th>
+                                <th>最后连接时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>通信机 A</td>
+                                <td>192.168.1.100</td>
+                                <td>
+                                    <span class="szse-status szse-status--success">
+                                        <span class="szse-status__dot"></span>
+                                        <span>在线</span>
+                                    </span>
+                                </td>
+                                <td>2026-03-04 10:30:00</td>
+                                <td>
+                                    <button class="szse-button szse-button--text szse-button--small">查看</button>
+                                    <button class="szse-button szse-button--text szse-button--small">编辑</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>通信机 B</td>
+                                <td>192.168.1.101</td>
+                                <td>
+                                    <span class="szse-status szse-status--error">
+                                        <span class="szse-status__dot"></span>
+                                        <span>离线</span>
+                                    </span>
+                                </td>
+                                <td>2026-03-03 15:20:00</td>
+                                <td>
+                                    <button class="szse-button szse-button--text szse-button--small">查看</button>
+                                    <button class="szse-button szse-button--text szse-button--small">编辑</button>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>通信机 C</td>
+                                <td>192.168.1.102</td>
+                                <td>
+                                    <span class="szse-status szse-status--warning">
+                                        <span class="szse-status__dot"></span>
+                                        <span>警告</span>
+                                    </span>
+                                </td>
+                                <td>2026-03-04 09:15:00</td>
+                                <td>
+                                    <button class="szse-button szse-button--text szse-button--small">查看</button>
+                                    <button class="szse-button szse-button--text szse-button--small">编辑</button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- 表单组件示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">表单组件</h2>
+            <div class="szse-card">
+                <div class="szse-card__body">
+                    <form>
+                        <div class="szse-form-group">
+                            <label class="szse-form-label szse-form-label--required">通信机名称</label>
+                            <input type="text" class="szse-form-input" placeholder="请输入通信机名称">
+                        </div>
+                        <div class="szse-form-group">
+                            <label class="szse-form-label szse-form-label--required">IP 地址</label>
+                            <input type="text" class="szse-form-input" placeholder="请输入 IP 地址">
+                        </div>
+                        <div class="szse-form-group">
+                            <label class="szse-form-label">端口号</label>
+                            <input type="number" class="szse-form-input" value="22">
+                        </div>
+                        <div class="szse-form-group">
+                            <label class="szse-form-label">描述</label>
+                            <textarea class="szse-form-input szse-form-textarea" placeholder="请输入描述信息"></textarea>
+                        </div>
+                        <div class="szse-flex szse-gap-md">
+                            <button type="button" class="szse-button szse-button--primary">保存</button>
+                            <button type="button" class="szse-button szse-button--secondary">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </section>
+
+        <!-- 面包屑导航示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">面包屑导航</h2>
+            <nav class="szse-breadcrumb">
+                <a href="#" class="szse-breadcrumb__item">首页</a>
+                <span class="szse-breadcrumb__separator">/</span>
+                <a href="#" class="szse-breadcrumb__item">通信机管理</a>
+                <span class="szse-breadcrumb__separator">/</span>
+                <span class="szse-breadcrumb__item szse-breadcrumb__item--active">通信机详情</span>
+            </nav>
+        </section>
+
+        <!-- 响应式布局示例 -->
+        <section class="demo-section">
+            <h2 class="demo-title">响应式布局</h2>
+            <div class="szse-card szse-mb-md">
+                <div class="szse-card__body">
+                    <p class="szse-text-center">当前窗口宽度：<strong id="window-width">-</strong></p>
+                    <p class="szse-text-center szse-mt-sm">调整浏览器窗口大小查看响应式效果</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="szse-footer">
+        <div>© 2026 运行环境检查系统 - 深交所风格设计系统</div>
+    </footer>
+
+    <script>
+        // 更新窗口宽度显示
+        function updateWindowWidth() {
+            const width = window.innerWidth;
+            document.getElementById('window-width').textContent = width + 'px';
+            
+            // 根据宽度显示断点信息
+            let breakpoint = '';
+            if (width <= 640) {
+                breakpoint = ' (超小屏)';
+            } else if (width <= 768) {
+                breakpoint = ' (小屏)';
+            } else if (width <= 1024) {
+                breakpoint = ' (中屏)';
+            } else {
+                breakpoint = ' (大屏)';
+            }
+            
+            document.getElementById('window-width').textContent += breakpoint;
+        }
+        
+        // 初始化和监听
+        updateWindowWidth();
+        window.addEventListener('resize', updateWindowWidth);
+    </script>
+</body>
+</html>
