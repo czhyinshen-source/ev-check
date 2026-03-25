@@ -102,8 +102,10 @@ async def test_operator(db_session):
 @pytest.fixture
 async def test_group(db_session):
     """创建通信机分组"""
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
     group = CommunicationGroup(
-        name="测试分组",
+        name=f"测试分组_{unique_id}",
         description="测试用途"
     )
     db_session.add(group)
@@ -245,8 +247,10 @@ async def test_check_item_list(db_session, test_check_items):
 @pytest.fixture
 async def test_snapshot_group(db_session):
     """创建测试快照组"""
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
     group = SnapshotGroup(
-        name="测试快照组",
+        name=f"测试快照组_{unique_id}",
         description="测试用途",
         is_system=False
     )

@@ -145,3 +145,70 @@ async def test_batch_report_not_found(auth_headers, db_session):
             assert resp.status_code == 404
     finally:
         app.dependency_overrides.clear()
+
+
+# 端到端测试：完整流程
+@pytest.mark.asyncio
+async def test_e2e_list_to_detail_flow(auth_headers, test_check_result_with_details, db_session):
+    """端到端测试：从列表到详情"""
+    app.dependency_overrides[get_db] = _get_override_db(db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            # 1. 获取列表
+            list_resp = await client.get("/api/v1/checks", headers=auth_headers)
+            assert list_resp.status_code == 200
+            list_data = list_resp.json()
+            assert len(list_data) > 0
+
+            # 2. 获取第一个结果的详情
+            result_id = list_data[0]["id"]
+            detail_resp = await client.get(f"/api/v1/checks/{result_id}", headers=auth_headers)
+            assert detail_resp.status_code == 200
+            detail_data = detail_resp.json()
+
+            # 3. 验证详情数据完整
+            assert detail_data["id"] == result_id
+            assert "rule_name" in detail_data
+            assert "communication_name" in detail_data
+            assert "snapshot_name" in detail_data
+            assert "summary" in detail_data
+            assert "details" in detail_data
+            assert len(detail_data["details"]) == 3
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_e2e_batch_report_aggregation(auth_headers, test_check_result_with_details, db_session, test_check_rule):
+    """端到端测试：批量报告聚合"""
+    app.dependency_overrides[get_db] = _get_override_db(db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            # 调用批量聚合 API
+            url = f"/api/v1/checks/batch-report/{test_check_rule.id}/2026-03-25T14:30:00"
+            resp = await client.get(url, headers=auth_headers)
+            assert resp.status_code == 200
+            data = resp.json()
+
+            # 验证聚合数据
+            assert data["rule_id"] == test_check_rule.id
+            assert data["server_count"] >= 1
+            assert "summary" in data
+            assert data["summary"]["total"] >= 0
+            assert "result_ids" in data
+            assert len(data["result_ids"]) >= 1
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_e2e_batch_report_invalid_time_format(auth_headers, db_session):
+    """端到端测试：批量报告无效时间格式"""
+    app.dependency_overrides[get_db] = _get_override_db(db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            # 使用无效的时间格式
+            resp = await client.get("/api/v1/checks/batch-report/1/invalid-time", headers=auth_headers)
+            assert resp.status_code == 400
+    finally:
+        app.dependency_overrides.clear()
