@@ -2,7 +2,7 @@
 
 **项目：** EV Check System（运行环境检查系统）
 **日期：** 2026-03-25
-**状态：** 已修订（v2 — 整合已有后端 PDF 导出）
+**状态：** 已确认（v3 — 经两轮审查修订）
 
 ---
 
@@ -37,6 +37,7 @@
 | 历史报告列表 | `GET /api/v1/checks` |
 | 单次报告详情 | `GET /api/v1/checks/{result_id}` |
 | 报告进度 | `GET /api/v1/checks/{result_id}/progress` |
+| 批量报告聚合 | `GET /api/v1/checks/batch-report/{rule_id}/{start_time}` |
 | PDF 导出（已有） | `GET /api/v1/checks/{result_id}/export?format=pdf` |
 
 ### 2.3 数据模型说明
@@ -207,6 +208,7 @@ CheckResultDetail（N条） = 该次执行中每个检查项的结果
 - 端点：`GET /api/v1/checks/{result_id}/export?format=pdf`
 - 服务：`app/services/report_exporter.py` 中的 `PDFExporter`
 - 前端：导出按钮直接 `window.open` 或 `fetch` 下载
+- **状态值统一：** `PDFExporter` 中的 `status_map` 需从 `success/warning/error` 改为 `pass/fail/error`，与 API 保持一致
 
 **后续迭代方向：**
 - 增强 PDF 样式（深交所风格 logo、签章页）
@@ -219,16 +221,32 @@ CheckResultDetail（N条） = 该次执行中每个检查项的结果
 
 ## 六、后端改动
 
-### 6.1 必需改动
+### 6.1 必需改动 — Schema 字段补全
 
-1. **扩展 `CheckResultResponse`** — 增加 `snapshot_name` 字段（关联 Snapshot 表获取名称）
-2. **扩展 `CheckResultListItem`** — 增加 `duration_seconds`、`snapshot_name`、`server_count`（同 rule_id + start_time 批次的服务器数）、`summary`（汇总通过/失败/异常数）
-3. **扩展 `CheckResultDetailResponse`** — 增加 `check_item_name`、`check_item_type`（已有 ✅）
+1. **`CheckResultResponse.snapshot_name`** — schema 中已声明，API 层需填充：关联 Snapshot 表获取名称并返回
+2. **`CheckResultListItem`** — 需扩展字段：
+   - `duration_seconds`：从 `start_time` 和 `end_time` 计算
+   - `snapshot_name`：关联 Snapshot 表获取
+   - `server_count`：同 rule_id + start_time 批次的服务器数
+   - `summary`：`CheckSummary` 对象（total/passed/failed/errors）
+3. **`CheckResultDetailResponse`** — `check_item_name`、`check_item_type` 已有 ✅
 
-### 6.2 可选改动
+### 6.2 必需改动 — 批量聚合 API
 
-1. **增加 `trigger_method` 字段** — 在 `CheckResult` 模型中增加触发方式字段，或通过 API 推断（检查 `ScheduledTask` 的 `last_run_at` 是否匹配）
-2. **批量结果聚合 API** — 新增 `GET /api/v1/checks/batch-report/{rule_id}/{start_time}` 专门返回聚合后的批量报告数据，避免前端做大量聚合计算
+- **新增 `GET /api/v1/checks/batch-report/{rule_id}/{start_time}`** — 返回聚合后的批量报告数据
+  - 参数：`rule_id`（规则ID）、`start_time`（执行开始时间，用于识别同批次）
+  - 返回：汇总所有 `CheckResult`（同 rule_id、同批次）的聚合数据，包含 `server_count`、`summary`、`duration_seconds`、`snapshot_name` 等
+  - 该 API 作为报告列表页的数据来源（替代直接使用 `GET /api/v1/checks` 的逐条数据）
+
+### 6.3 必需改动 — PDF 状态值统一
+
+- **修改 `app/services/report_exporter.py`** 中的状态映射
+- 将 `success/warning/error` 统一为 `pass/fail/error`（与 API 和前端一致）
+- 影响：`PDFExporter.export()` 中的 `status_map` 字典
+
+### 6.4 可选改动
+
+- **增加 `trigger_method` 字段** — 在 `CheckResult` 模型中增加触发方式字段，或通过 API 推断（检查 `ScheduledTask` 的 `last_run_at` 是否匹配）
 
 ---
 
@@ -275,8 +293,9 @@ CheckResultDetail（N条） = 该次执行中每个检查项的结果
 
 | 优先级 | 内容 |
 |--------|------|
-| P0 | 报告详情页（前端展示 + 缩略/展开 + PDF 下载） |
-| P0 | 后端 API 扩展（snapshot_name, duration_seconds, summary 等字段） |
+| P0 | 后端 Schema 扩展（snapshot_name, CheckResultListItem 字段补全） |
+| P0 | 后端批量聚合 API（`GET /api/v1/checks/batch-report/{rule_id}/{start_time}`） |
+| P0 | 后端 PDF 状态值统一（`pass/fail/error`） |
+| P1 | 报告详情页（前端展示 + 缩略/展开 + PDF 下载） |
 | P1 | 报告列表页（历史记录卡片展示 + 筛选） |
-| P2 | 批量结果聚合（批量检查的多服务器聚合展示） |
-| P3 | 触发方式字段 + PDF 样式增强 |
+| P2 | 触发方式字段 + PDF 样式增强 |
