@@ -119,3 +119,29 @@ def test_check_result_response_schema():
     assert "duration_seconds" in fields
     assert "summary" in fields
     assert "details" in fields
+
+
+def test_batch_report_item_schema():
+    """验证 BatchReportItem Schema 字段定义"""
+    from app.schemas.check import BatchReportItem
+    fields = BatchReportItem.model_fields
+    assert "rule_id" in fields
+    assert "snapshot_id" in fields
+    assert "snapshot_name" in fields
+    assert "server_count" in fields
+    assert "summary" in fields
+    assert "result_ids" in fields
+
+
+# 批量聚合 API 测试
+@pytest.mark.asyncio
+async def test_batch_report_not_found(auth_headers, db_session):
+    """验证不存在的批量报告返回 404"""
+    app.dependency_overrides[get_db] = _get_override_db(db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            # 使用不存在的 rule_id 和 start_time
+            resp = await client.get("/api/v1/checks/batch-report/99999/2026-03-25T14:30:00", headers=auth_headers)
+            assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.clear()

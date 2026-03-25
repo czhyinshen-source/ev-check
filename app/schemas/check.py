@@ -132,3 +132,18 @@ class StartBatchCheckResponse(BaseModel):
     created_count: int
     results: List[StartCheckResponse]
     message: str = "批量检查任务已创建"
+
+
+class BatchReportItem(BaseModel):
+    """批量检查聚合报告"""
+    id: int
+    rule_id: Optional[int] = None
+    rule_name: Optional[str] = None
+    snapshot_id: Optional[int] = None
+    snapshot_name: Optional[str] = None
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+    server_count: int = 1
+    summary: CheckSummary = Field(default_factory=CheckSummary)
+    result_ids: List[int] = Field(default_factory=list)
