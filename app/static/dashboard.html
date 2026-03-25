@@ -561,11 +561,11 @@
                 <div class="sidebar">
                     <div class="sidebar-header">
                         <h3>快照组管理</h3>
-                        <button class="btn btn-primary btn-sm" onclick="openSnapshotGroupModal()">+ 分组</button>
+                        <button class="btn btn-primary btn-sm" onclick="window.snapshots.openSnapshotGroupModal()">+ 分组</button>
                     </div>
                     <ul class="group-tree" id="snapshotGroupTree">
                         <li>
-                            <div class="group-item active" data-group-id="" onclick="filterBySnapshotGroup('')">
+                            <div class="group-item active" data-group-id="" onclick="window.snapshots.filterBySnapshotGroup('')">
                                 <span class="icon">📁</span>
                                 <span>全部快照</span>
                                 <span class="count" id="totalSnapshotCount">0</span>
@@ -579,10 +579,10 @@
                         <div class="section-header">
                             <h2 id="currentSnapshotGroupName">快照管理</h2>
                             <div class="action-bar">
-                                <input type="text" class="search-box" id="snapshotSearch" placeholder="按名称搜索..." oninput="searchSnapshots()">
-                                <button class="btn btn-primary" onclick="openSnapshotModal()">+ 创建快照</button>
-                                <button class="btn btn-success" onclick="openSnapshotBuildModal()">构建快照</button>
-                                <button class="btn btn-default" onclick="loadSnapshots()">刷新</button>
+                                <input type="text" class="search-box" id="snapshotSearch" placeholder="按名称搜索..." oninput="window.snapshots.searchSnapshots()">
+                                <button class="btn btn-primary" onclick="window.snapshots.openSnapshotModal()">+ 创建快照</button>
+                                <button class="btn btn-success" onclick="window.snapshots.openSnapshotBuildModal()">构建快照</button>
+                                <button class="btn btn-default" onclick="window.snapshots.loadSnapshots()">刷新</button>
                             </div>
                         </div>
                         <table>
@@ -1195,7 +1195,7 @@
         <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header">
                 <h3>快照构建</h3>
-                <button class="modal-close" onclick="closeSnapshotBuildModal()">&times;</button>
+                <button class="modal-close" onclick="window.snapshots.closeSnapshotBuildModal()">&times;</button>
             </div>
             <form id="snapshotBuildForm">
                 <div class="form-group">
@@ -1212,8 +1212,8 @@
                 </div>
                 <div id="buildSelectionCount" style="margin: 10px 0; color: #666;">已选: 0台, 0组</div>
                 <div style="display:flex; gap:10px; margin-top:20px;">
-                    <button type="button" class="btn btn-primary" style="flex:1;" onclick="startSnapshotBuild()">开始构建</button>
-                    <button type="button" class="btn btn-default" style="flex:1;" onclick="closeSnapshotBuildModal()">取消</button>
+                    <button type="button" class="btn btn-primary" style="flex:1;" onclick="window.snapshots.startSnapshotBuild()">开始构建</button>
+                    <button type="button" class="btn btn-default" style="flex:1;" onclick="window.snapshots.closeSnapshotBuildModal()">取消</button>
                 </div>
             </form>
         </div>

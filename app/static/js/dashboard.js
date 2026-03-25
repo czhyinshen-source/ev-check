@@ -22,9 +22,9 @@
                 window.communications.loadCommunications(),
                 loadCheckItemLists(),
                 loadCheckItems(),
-                loadSnapshots(),
+                window.snapshots.loadSnapshots(),
                 window.checks?.loadCheckResults?.() || Promise.resolve(),
-                loadReports(),
+                window.reports?.loadReports?.() || Promise.resolve(),
                 loadStats(),
                 window.communications.loadGroups()
             ]);
@@ -53,24 +53,7 @@
 
         // loadGroups, filterByGroup, loadCommunications, searchCommunications 在 communications.js 中定义
 
-        async function loadSnapshots() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/snapshots`, { headers: getHeaders() });
-                const data = await res.json();
-                const tbody = document.getElementById('snapshotTable');
-                tbody.innerHTML = data.map(s => `
-                    <tr>
-                        <td>${s.id}</td>
-                        <td>${s.name}</td>
-                        <td>${s.group_id}</td>
-                        <td>${new Date(s.snapshot_time).toLocaleString()}</td>
-                        <td><span class="status-badge ${s.is_default ? 'success' : 'info'}">${s.is_default ? '是' : '否'}</span></td>
-                        <td><button class="btn btn-danger btn-sm" onclick="deleteSnapshot(${s.id})">删除</button></td>
-                    </tr>
-                `).join('');
-            } catch (e) { console.error(e); }
-        }
-        // loadCheckResults 和 loadCurrentTask 在 checks.js 中定义
+          // loadCheckResults 和 loadCurrentTask 在 checks.js 中定义
 
         async function loadSSHKeys() {
             try {
@@ -90,120 +73,7 @@
             } catch (e) { console.error(e); }
         }
         
-        let allReports = [];
-        
-        async function loadReports() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/checks`, { headers: getHeaders() });
-                allReports = await res.json();
-                renderReports(allReports);
-            } catch (e) { console.error(e); }
-        }
-        
-        function renderReports(reports) {
-            const tbody = document.getElementById('reportTable');
-            tbody.innerHTML = reports.map(r => `
-                <tr>
-                    <td>${r.id}</td>
-                    <td>${r.rule_id || '-'}</td>
-                    <td>${r.communication_id || '-'}</td>
-                    <td><span class="status-badge ${r.status === 'success' ? 'success' : r.status === 'running' ? 'warning' : 'error'}">${r.status === 'success' ? '通过' : r.status === 'running' ? '进行中' : r.status === 'failed' ? '失败' : r.status}</span></td>
-                    <td>${r.progress}%</td>
-                    <td>${new Date(r.start_time).toLocaleString()}</td>
-                    <td>${r.end_time ? new Date(r.end_time).toLocaleString() : '-'}</td>
-                    <td>
-                        <button class="btn btn-primary btn-sm" onclick="viewReportDetail(${r.id})">详情</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteCheckResult(${r.id})">删除</button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-        
-        function searchReports() {
-            const keyword = document.getElementById('reportSearch').value.toLowerCase();
-            const filtered = allReports.filter(r => 
-                String(r.id).includes(keyword) || 
-                String(r.rule_id).includes(keyword) ||
-                String(r.communication_id).includes(keyword) ||
-                r.status.includes(keyword)
-            );
-            renderReports(filtered);
-        }
-        
-        async function viewReportDetail(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/checks/${id}`, { headers: getHeaders() });
-                const data = await res.json();
-                const content = document.getElementById('reportDetailContent');
-                const statusText = data.status === 'success' ? '通过' : data.status === 'running' ? '进行中' : data.status === 'failed' ? '失败' : data.status;
-                content.innerHTML = `
-                    <div style="margin-bottom:15px;">
-                        <div><strong>规则ID:</strong> ${data.rule_id || '-'}</div>
-                        <div><strong>通信机ID:</strong> ${data.communication_id || '-'}</div>
-                        <div><strong>状态:</strong> <span class="status-badge ${data.status === 'success' ? 'success' : data.status === 'running' ? 'warning' : 'error'}">${statusText}</span></div>
-                        <div><strong>进度:</strong> ${data.progress}%</div>
-                        <div><strong>开始时间:</strong> ${new Date(data.start_time).toLocaleString()}</div>
-                        <div><strong>结束时间:</strong> ${data.end_time ? new Date(data.end_time).toLocaleString() : '-'}</div>
-                        ${data.error_message ? `<div style="color:#f5222d;margin-top:10px;"><strong>错误信息:</strong> ${data.error_message}</div>` : ''}
-                    </div>
-                    <h4 style="margin:15px 0 10px;">检查详情</h4>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>检查项ID</th>
-                                <th>状态</th>
-                                <th>期望值</th>
-                                <th>实际值</th>
-                                <th>消息</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.details && data.details.length > 0 ? data.details.map(d => `
-                                <tr>
-                                    <td>${d.check_item_id}</td>
-                                    <td><span class="status-badge ${d.status === 'success' ? 'success' : d.status === 'warning' ? 'warning' : 'error'}">${d.status === 'success' ? '通过' : d.status === 'warning' ? '警告' : '失败'}</span></td>
-                                    <td>${JSON.stringify(d.expected_value) || '-'}</td>
-                                    <td>${JSON.stringify(d.actual_value) || '-'}</td>
-                                    <td>${d.message || '-'}</td>
-                                </tr>
-                            `).join('') : '<tr><td colspan="5" style="text-align:center;color:#999;">暂无详情</td></tr>'}
-                        </tbody>
-                    </table>
-                `;
-                document.getElementById('reportDetailModal').classList.add('active');
-            } catch (e) { console.error(e); }
-        }
-        
-        async function deleteCheckResult(id) {
-            if (!confirm('确定删除此检查结果?')) return;
-            try {
-                await fetch(`${API_BASE}/api/v1/checks/${id}`, { method: 'DELETE', headers: getHeaders() });
-                loadReports();
-            } catch (e) { console.error(e); }
-        }
-        
-        function exportReport() {
-            if (allReports.length === 0) {
-                alert('没有可导出的数据');
-                return;
-            }
-            const csv = [
-                ['ID', '规则ID', '通信机ID', '状态', '进度', '开始时间', '结束时间'].join(','),
-                ...allReports.map(r => [
-                    r.id, r.rule_id || '', r.communication_id || '', r.status, r.progress,
-                    new Date(r.start_time).toISOString(), r.end_time ? new Date(r.end_time).toISOString() : ''
-                ].join(','))
-            ].join('\n');
-            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `检查报表_${new Date().toISOString().slice(0,10)}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        // loadGroupOptions, loadSSHKeysForSelect, toggleAuthFields 在 communications.js 中定义
+  // loadGroupOptions, loadSSHKeysForSelect, toggleAuthFields 在 communications.js 中定义
 
                 }
 
@@ -606,7 +476,7 @@
                 body: JSON.stringify(data)
             });
             closeModal('snapshotModal');
-            loadSnapshots();
+            window.snapshots.loadSnapshots();
         });
         
         document.getElementById('checkForm').addEventListener('submit', async (e) => {
@@ -866,84 +736,15 @@
             loadCheckItems();
         }
         
-        async function deleteSnapshot(id) {
-            if (!confirm('确定删除?')) return;
-            await fetch(`${API_BASE}/api/v1/snapshots/${id}`, { method: 'DELETE', headers: getHeaders() });
-            loadSnapshots();
-        }
-        
-        function openSnapshotModal() {
-            loadSnapshotGroupsForModal();
-            document.getElementById('snapshotModal')?.classList.add('active');
-        }
-        
-        async function loadSnapshotGroupsForModal() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/snapshots/groups`, { headers: getHeaders() });
-                const groups = await res.json();
-                document.getElementById('snapshotGroup').innerHTML = groups.map(g => 
-                    `<option value="${g.id}">${g.name}</option>`
-                ).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function openCheckModal() {
-            loadRulesAndCommsForModal();
-            document.getElementById('checkModal')?.classList.add('active');
-        }
-        
-        async function loadRulesAndCommsForModal() {
-            try {
-                const [rulesRes, commsRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/v1/check-rules`, { headers: getHeaders() }),
-                    fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() })
-                ]);
-                const rules = await rulesRes.json();
-                const comms = await commsRes.json();
+          
                 
-                document.getElementById('checkRule').innerHTML = '<option value="">请选择规则</option>' + 
-                    rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
-                document.getElementById('checkCommunication').innerHTML = '<option value="">请选择通信机</option>' + 
-                    comms.map(c => `<option value="${c.id}">${c.name} (${c.ip_address})</option>`).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function viewCheckResult(id) {
-            fetch(`${API_BASE}/api/v1/checks/${id}`, { headers: getHeaders() })
-                .then(r => r.json())
-                .then(data => alert(JSON.stringify(data, null, 2)));
-        }
-        
         function closeModal(id) {
             document.getElementById(id).classList.remove('active');
         }
 
         // ========== 缺失的函数 ==========
 
-        function openSnapshotGroupModal() {
-            document.getElementById('snapshotGroupName').value = '';
-            document.getElementById('snapshotGroupDesc').value = '';
-            document.getElementById('snapshotGroupModal')?.classList.add('active');
-        }
-
-        function filterBySnapshotGroup(groupId) {
-            currentSnapshotGroupId = groupId;
-            loadSnapshots();
-            // 更新active状态
-            document.querySelectorAll('#snapshotGroupTree .group-item').forEach(item => {
-                item.classList.toggle('active', item.dataset.groupId === groupId);
-            });
-        }
-
-        function searchSnapshots() {
-            const keyword = document.getElementById('snapshotSearch').value.toLowerCase();
-            const rows = document.querySelectorAll('#snapshotTable tr');
-            rows.forEach(row => {
-                const name = row.cells[1]?.textContent.toLowerCase() || '';
-                row.style.display = name.includes(keyword) ? '' : 'none';
-            });
-        }
-
+    
         // ========== 全局函数导出 ==========
         // 将所有在HTML中通过内联事件调用的函数挂载到window对象
         window.logout = logout;
@@ -956,18 +757,10 @@
         window.openExcelImportModal = openExcelImportModal;
         window.openBatchDeployModal = openBatchDeployModal;
         window.downloadExcelTemplate = downloadExcelTemplate;
-          window.openSnapshotGroupModal = openSnapshotGroupModal;
-        window.filterBySnapshotGroup = filterBySnapshotGroup;
-        window.openSnapshotModal = openSnapshotModal;
-        window.loadSnapshots = loadSnapshots;
-        window.searchSnapshots = searchSnapshots;
-        window.openCheckModal = openCheckModal;
+          window.openCheckModal = () => window.checks.openCheckModal();
         window.openSSHKeyModal = openSSHKeyModal;
         window.loadSSHKeys = loadSSHKeys;
-        window.loadReports = loadReports;
-        window.searchReports = searchReports;
-        window.exportReport = exportReport;
-        window.toggleAuthFields = toggleAuthFields;
+                window.toggleAuthFields = toggleAuthFields;
         window.toggleDeployFields = toggleDeployFields;
 
         refreshData();

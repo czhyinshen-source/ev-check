@@ -1,38 +1,42 @@
 // 报告管理模块
 // 全局变量
+const API_BASE = '';
 let currentPage = 1;
 let pageSize = 10;
 let totalItems = 0;
 let currentFilters = {};
+let allReports = [];
 
 // 初始化
-document.addEventListener('DOMContentLoaded', function() {
-    // 检查登录状态
-    const token = localStorage.getItem('token');
-    if (!token) {
-        window.location.href = '/login.html';
-        return;
-    }
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', function() {
+        // 检查登录状态
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login.html';
+            return;
+        }
 
-    // 显示当前用户
-    const username = localStorage.getItem('username') || '未知用户';
-    const currentUserEl = document.getElementById('currentUser');
-    if (currentUserEl) {
-        currentUserEl.textContent = `当前用户: ${username}`;
-    }
+        // 显示当前用户
+        const username = localStorage.getItem('username') || '未知用户';
+        const currentUserEl = document.getElementById('currentUser');
+        if (currentUserEl) {
+            currentUserEl.textContent = `当前用户: ${username}`;
+        }
 
-    // 加载规则列表（用于筛选）
-    loadRulesForFilter();
+        // 加载规则列表（用于筛选）
+        loadRulesForFilter();
 
-    // 加载报告列表
-    loadBatchReports();
+        // 加载报告列表
+        loadBatchReports();
 
-    // 绑定筛选事件
-    document.getElementById('startTime').addEventListener('change', debounce(loadBatchReports, 300));
-    document.getElementById('endTime').addEventListener('change', debounce(loadBatchReports, 300));
-    document.getElementById('ruleFilter').addEventListener('change', debounce(loadBatchReports, 300));
-    document.getElementById('statusFilter').addEventListener('change', debounce(loadBatchReports, 300));
-});
+        // 绑定筛选事件
+        document.getElementById('startTime').addEventListener('change', debounce(loadBatchReports, 300));
+        document.getElementById('endTime').addEventListener('change', debounce(loadBatchReports, 300));
+        document.getElementById('ruleFilter').addEventListener('change', debounce(loadBatchReports, 300));
+        document.getElementById('statusFilter').addEventListener('change', debounce(loadBatchReports, 300));
+    });
+}
 
 // 防抖函数
 function debounce(func, wait) {
@@ -344,9 +348,132 @@ function getHeaders() {
     };
 }
 
+// 加载报告列表
+async function loadReports() {
+    try {
+        const res = await fetch(`${API_BASE}/api/v1/checks`, { headers: getHeaders() });
+        allReports = await res.json();
+        renderReports(allReports);
+    } catch (e) { console.error(e); }
+}
+
+// 渲染报告列表
+function renderReports(reports) {
+    const tbody = document.getElementById('reportTable');
+    tbody.innerHTML = reports.map(r => `
+        <tr>
+            <td>${r.id}</td>
+            <td>${r.rule_id || '-'}</td>
+            <td>${r.communication_id || '-'}</td>
+            <td><span class="status-badge ${r.status === 'success' ? 'success' : r.status === 'running' ? 'warning' : 'error'}">${r.status === 'success' ? '通过' : r.status === 'running' ? '进行中' : r.status === 'failed' ? '失败' : r.status}</span></td>
+            <td>${r.progress}%</td>
+            <td>${new Date(r.start_time).toLocaleString()}</td>
+            <td>${r.end_time ? new Date(r.end_time).toLocaleString() : '-'}</td>
+            <td>
+                <button class="btn btn-primary btn-sm" onclick="viewReportDetail(${r.id})">详情</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteCheckResult(${r.id})">删除</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// 搜索报告
+function searchReports() {
+    const keyword = document.getElementById('reportSearch').value.toLowerCase();
+    const filtered = allReports.filter(r =>
+        String(r.id).includes(keyword) ||
+        String(r.rule_id).includes(keyword) ||
+        String(r.communication_id).includes(keyword) ||
+        r.status.includes(keyword)
+    );
+    renderReports(filtered);
+}
+
+// 查看报告详情
+async function viewReportDetail(id) {
+    try {
+        const res = await fetch(`${API_BASE}/api/v1/checks/${id}`, { headers: getHeaders() });
+        const data = await res.json();
+        const content = document.getElementById('reportDetailContent');
+        const statusText = data.status === 'success' ? '通过' : data.status === 'running' ? '进行中' : data.status === 'failed' ? '失败' : data.status;
+        content.innerHTML = `
+            <div style="margin-bottom:15px;">
+                <div><strong>规则ID:</strong> ${data.rule_id || '-'}</div>
+                <div><strong>通信机ID:</strong> ${data.communication_id || '-'}</div>
+                <div><strong>状态:</strong> <span class="status-badge ${data.status === 'success' ? 'success' : data.status === 'running' ? 'warning' : 'error'}">${statusText}</span></div>
+                <div><strong>进度:</strong> ${data.progress}%</div>
+                <div><strong>开始时间:</strong> ${new Date(data.start_time).toLocaleString()}</div>
+                <div><strong>结束时间:</strong> ${data.end_time ? new Date(data.end_time).toLocaleString() : '-'}</div>
+                ${data.error_message ? `<div style="color:#f5222d;margin-top:10px;"><strong>错误信息:</strong> ${data.error_message}</div>` : ''}
+            </div>
+            <h4 style="margin:15px 0 10px;">检查详情</h4>
+            <table>
+                <thead>
+                    <tr>
+                        <th>检查项ID</th>
+                        <th>状态</th>
+                        <th>期望值</th>
+                        <th>实际值</th>
+                        <th>消息</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.details && data.details.length > 0 ? data.details.map(d => `
+                        <tr>
+                            <td>${d.check_item_id}</td>
+                            <td><span class="status-badge ${d.status === 'success' ? 'success' : d.status === 'warning' ? 'warning' : 'error'}">${d.status === 'success' ? '通过' : d.status === 'warning' ? '警告' : '失败'}</span></td>
+                            <td>${JSON.stringify(d.expected_value) || '-'}</td>
+                            <td>${JSON.stringify(d.actual_value) || '-'}</td>
+                            <td>${d.message || '-'}</td>
+                        </tr>
+                    `).join('') : '<tr><td colspan="5" style="text-align:center;color:#999;">暂无详情</td></tr>'}
+                </tbody>
+            </table>
+        `;
+        document.getElementById('reportDetailModal').classList.add('active');
+    } catch (e) { console.error(e); }
+}
+
+// 删除检查结果
+async function deleteCheckResult(id) {
+    if (!confirm('确定删除此检查结果?')) return;
+    try {
+        await fetch(`${API_BASE}/api/v1/checks/${id}`, { method: 'DELETE', headers: getHeaders() });
+        loadReports();
+    } catch (e) { console.error(e); }
+}
+
+// 导出报告
+function exportReport() {
+    if (allReports.length === 0) {
+        alert('没有可导出的数据');
+        return;
+    }
+    const csv = [
+        ['ID', '规则ID', '通信机ID', '状态', '进度', '开始时间', '结束时间'].join(','),
+        ...allReports.map(r => [
+            r.id, r.rule_id || '', r.communication_id || '', r.status, r.progress,
+            new Date(r.start_time).toISOString(), r.end_time ? new Date(r.end_time).toISOString() : ''
+        ].join(','))
+    ].join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `检查报表_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
 // 导出函数到全局
 window.applyFilters = applyFilters;
 window.resetFilters = resetFilters;
 window.viewReport = viewReport;
 window.exportPDF = exportPDF;
 window.logout = logout;
+window.loadReports = loadReports;
+window.renderReports = renderReports;
+window.searchReports = searchReports;
+window.viewReportDetail = viewReportDetail;
+window.deleteCheckResult = deleteCheckResult;
+window.exportReport = exportReport;

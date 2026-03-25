@@ -368,6 +368,23 @@ async function loadCurrentTask() {
     } catch (e) { console.error('加载当前任务失败:', e); }
 }
 
+// 从dashboard.js提取的函数：加载规则和通信机到模态框
+async function loadRulesAndCommsForModal() {
+    try {
+        const [rulesRes, commsRes] = await Promise.all([
+            fetch(`${API_BASE}/api/v1/check-rules`, { headers: getHeaders() }),
+            fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() })
+        ]);
+        const rules = await rulesRes.json();
+        const comms = await commsRes.json();
+
+        document.getElementById('checkRule').innerHTML = '<option value="">请选择规则</option>' +
+            rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+        document.getElementById('checkCommunication').innerHTML = '<option value="">请选择通信机</option>' +
+            comms.map(c => `<option value="${c.id}">${c.name} (${c.ip_address})</option>`).join('');
+    } catch (e) { console.error(e); }
+}
+
 // 导出模块
 window.checks = {
     openCheckModal,
@@ -378,5 +395,7 @@ window.checks = {
     cancelCheck,
     loadCurrentTask,
     getStatusBadge,
-    getDetailStatusBadge
+    getDetailStatusBadge,
+    // 导出dashboard.js中的特定函数
+    loadRulesAndCommsForModal
 };
