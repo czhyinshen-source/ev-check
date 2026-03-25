@@ -290,6 +290,142 @@
             padding: 40px;
             color: #999;
         }
+
+        /* 检查项属性分组样式 */
+        .attr-group {
+            margin-bottom: 12px;
+            padding: 10px;
+            background: #fafafa;
+            border-radius: 6px;
+            border: 1px solid #eee;
+        }
+        .attr-group > label {
+            font-weight: 500;
+        }
+        .attr-fields {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed #ddd;
+        }
+        .attr-group input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        .attr-group label input[type="checkbox"] + span {
+            font-weight: normal;
+        }
+
+        /* 表单内部字段样式 */
+        .attr-fields .form-group {
+            margin-bottom: 10px;
+        }
+        .attr-fields .form-group:last-child {
+            margin-bottom: 0;
+        }
+        .attr-fields .form-group label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 4px;
+        }
+        .attr-fields input,
+        .attr-fields select,
+        .attr-fields textarea {
+            padding: 6px 10px;
+            font-size: 13px;
+        }
+        .attr-fields .form-row {
+            gap: 10px;
+        }
+
+        /* 描述文字样式 */
+        .form-group small {
+            display: block;
+            margin-top: 4px;
+            font-size: 12px;
+            color: #999;
+        }
+
+        /* 快照构建样式 */
+        .build-group-item {
+            margin-bottom: 10px;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .build-group-item .group-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f5f7fa;
+            cursor: pointer;
+        }
+        .build-group-item .group-header:hover {
+            background: #e6f7ff;
+        }
+        .build-group-item .group-name {
+            flex: 1;
+            font-weight: 500;
+        }
+        .build-group-item .group-communications {
+            padding: 10px 12px 10px 36px;
+        }
+        .build-group-item .comm-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            cursor: pointer;
+        }
+        .build-group-item .check-list-selector {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed #ddd;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .build-group-item .check-list-selector select {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        /* 进度显示样式 */
+        .build-group-progress {
+            margin-bottom: 10px;
+            border: 1px solid #eee;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .build-group-progress .group-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #fafafa;
+            cursor: pointer;
+        }
+        .build-group-progress .group-comm-progress {
+            padding: 8px 12px 8px 32px;
+        }
+        .build-group-progress .comm-progress-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 0;
+            font-size: 13px;
+        }
+        .comm-status-success { color: #52c41a; }
+        .comm-status-running { color: #1890ff; }
+        .comm-status-failed { color: #f5222d; }
+        .comm-status-pending { color: #999; }
+        .comm-status-text { color: #999; margin-left: auto; font-size: 12px; }
+        .status-completed { color: #52c41a; }
+        .status-running { color: #1890ff; }
+        .status-failed { color: #f5222d; }
     </style>
 </head>
 <body>
@@ -445,7 +581,8 @@
                             <div class="action-bar">
                                 <input type="text" class="search-box" id="snapshotSearch" placeholder="按名称搜索..." oninput="searchSnapshots()">
                                 <button class="btn btn-primary" onclick="openSnapshotModal()">+ 创建快照</button>
-                                <button class="btn btn-success" onclick="loadSnapshots()">刷新</button>
+                                <button class="btn btn-success" onclick="openSnapshotBuildModal()">构建快照</button>
+                                <button class="btn btn-default" onclick="loadSnapshots()">刷新</button>
                             </div>
                         </div>
                         <table>
@@ -467,17 +604,29 @@
         </div>
         
         <div class="tab-content" id="checks">
+            <!-- 当前任务进度显示 -->
+            <div id="currentTaskProgress" class="section" style="display:none; margin-bottom:20px; background:#e6f7ff; border:1px solid #91d5ff;">
+                <div style="display:flex; align-items:center; gap:15px; margin-bottom:10px;">
+                    <span style="font-weight:500;">当前检查任务:</span>
+                    <span class="progress-text" style="flex:1;">-</span>
+                    <span class="current-item" style="color:#666;"></span>
+                </div>
+                <div class="progress-bar" style="height:8px; background:#fff; border-radius:4px; overflow:hidden;">
+                    <div class="progress-bar-fill" style="height:100%; background:#1890ff; transition:width 0.3s; width:0%;"></div>
+                </div>
+            </div>
+
             <div class="section">
                 <div class="action-bar">
                     <button class="btn btn-primary" onclick="openCheckModal()">+ 启动检查</button>
-                    <button class="btn btn-success" onclick="refreshData()">刷新</button>
+                    <button class="btn btn-success" onclick="loadCheckResults()">刷新</button>
                 </div>
                 <table>
                     <thead>
                         <tr>
                             <th>ID</th>
-                            <th>规则ID</th>
-                            <th>通信机ID</th>
+                            <th>规则</th>
+                            <th>通信机</th>
                             <th>状态</th>
                             <th>进度</th>
                             <th>开始时间</th>
@@ -755,150 +904,257 @@
     
     <!-- 检查项弹窗 -->
     <div class="modal" id="checkItemModal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 650px; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header">
                 <h3 id="checkItemModalTitle">添加检查项</h3>
                 <button class="modal-close" onclick="closeModal('checkItemModal')">&times;</button>
             </div>
             <form id="checkItemForm">
                 <input type="hidden" id="checkItemId">
+
+                <!-- 检查项分类选择 -->
                 <div class="form-group">
-                    <label>检查项名称 *</label>
-                    <input type="text" id="checkItemName" required>
-                </div>
-                <div class="form-group">
-                    <label>目标路径</label>
-                    <input type="text" id="checkItemTarget" placeholder="/path/to/check">
-                </div>
-                
-                <div class="form-group">
-                    <label>检查类型 *</label>
-                    <div style="display: flex; flex-wrap: wrap; gap: 15px;">
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="file_exists" onchange="toggleCheckItemFields()">
-                            <span>存在</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="file_permissions" onchange="toggleCheckItemFields()">
-                            <span>权限</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="file_owner" onchange="toggleCheckItemFields()">
-                            <span>所有者</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="file_size" onchange="toggleCheckItemFields()">
-                            <span>大小</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="file_mtime" onchange="toggleCheckItemFields()">
-                            <span>修改时间</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="file_content" onchange="toggleCheckItemFields()">
-                            <span>文件内容</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="filesystem" onchange="toggleCheckItemFields()">
-                            <span>文件系统</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="route" onchange="toggleCheckItemFields()">
-                            <span>路由表</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="kernel" onchange="toggleCheckItemFields()">
-                            <span>内核参数</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="process" onchange="toggleCheckItemFields()">
-                            <span>进程</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="network" onchange="toggleCheckItemFields()">
-                            <span>网络</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="log" onchange="toggleCheckItemFields()">
-                            <span>日志</span>
-                        </label>
-                        <label style="display: flex; align-items: center; gap: 5px; white-space: nowrap;">
-                            <input type="checkbox" name="checkItemType" value="service" onchange="toggleCheckItemFields()">
-                            <span>服务</span>
-                        </label>
-                    </div>
-                </div>
-                
-                <!-- 权限检查字段 -->
-                <div class="form-group" id="filePermissionsFields" style="display:none">
-                    <label>权限值</label>
-                    <input type="text" id="filePermissionsValue" placeholder="755">
-                </div>
-                
-                <!-- 所有者检查字段 -->
-                <div class="form-group" id="fileOwnerFields" style="display:none">
-                    <label>所有者</label>
-                    <input type="text" id="fileOwnerValue" placeholder="root">
-                </div>
-                
-                <!-- 大小检查字段 -->
-                <div class="form-group" id="fileSizeFields" style="display:none">
-                    <label>大小</label>
-                    <input type="number" id="fileSizeValue" placeholder="1024">
-                    <select id="fileSizeUnit">
-                        <option value="bytes">字节</option>
-                        <option value="kb">KB</option>
-                        <option value="mb">MB</option>
-                        <option value="gb">GB</option>
+                    <label>检查项分类 *</label>
+                    <select id="checkItemCategory" onchange="toggleCheckItemCategory()">
+                        <option value="">请选择检查项分类</option>
+                        <option value="file">文件/目录检查</option>
+                        <option value="content">文件内容检查</option>
+                        <option value="route">路由表检查</option>
                     </select>
                 </div>
-                
-                <!-- 修改时间检查字段 -->
-                <div class="form-group" id="fileMtimeFields" style="display:none">
-                    <label>修改时间</label>
-                    <input type="datetime-local" id="fileMtimeValue">
+
+                <div class="form-group">
+                    <label>检查项名称 *</label>
+                    <input type="text" id="checkItemName" required placeholder="如：检查/etc/hosts文件">
                 </div>
-                
-                <!-- 文件内容检查字段 -->
-                <div class="form-group" id="fileContentCheckFields" style="display:none">
-                    <label>搜索模式</label>
-                    <input type="text" id="fileContentPattern" placeholder="正则表达式">
+
+                <!-- ==================== 文件/目录检查 ==================== -->
+                <div id="fileCheckFields" style="display:none;">
+                    <div class="form-group">
+                        <label>文件/目录路径 *</label>
+                        <input type="text" id="filePath" placeholder="/etc/hosts 或 /var/log/">
+                    </div>
+
+                    <div class="form-group">
+                        <label style="color: #1890ff; font-weight: 500;">检查属性（可选）</label>
+                    </div>
+
+                    <!-- 文件时间检查 -->
+                    <div class="attr-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="checkFileMtime" onchange="toggleCheckItemFields()">
+                            <span>修改时间</span>
+                        </label>
+                        <div class="attr-fields" id="fileMtimeFields" style="display:none;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>比较基准</label>
+                                    <select id="fileMtimeCompareMode" onchange="toggleCheckItemFields()">
+                                        <option value="snapshot">与快照比较</option>
+                                        <option value="specified">指定时间范围</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" id="fileMtimeRangeFields" style="display:none;">
+                                <div class="form-group">
+                                    <label>下限</label>
+                                    <input type="datetime-local" id="fileMtimeStart">
+                                </div>
+                                <div class="form-group">
+                                    <label>上限</label>
+                                    <input type="datetime-local" id="fileMtimeEnd">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 文件大小检查 -->
+                    <div class="attr-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="checkFileSize" onchange="toggleCheckItemFields()">
+                            <span>文件大小</span>
+                        </label>
+                        <div class="attr-fields" id="fileSizeFields" style="display:none;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>比较基准</label>
+                                    <select id="fileSizeCompareMode" onchange="toggleCheckItemFields()">
+                                        <option value="snapshot">与快照比较</option>
+                                        <option value="specified">指定大小范围</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-row" id="fileSizeRangeFields" style="display:none;">
+                                <div class="form-group">
+                                    <label>最小(字节)</label>
+                                    <input type="number" id="fileSizeMin" placeholder="0" min="0">
+                                </div>
+                                <div class="form-group">
+                                    <label>最大(字节)</label>
+                                    <input type="number" id="fileSizeMax" placeholder="0" min="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 属主检查 -->
+                    <div class="attr-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="checkFileOwner" onchange="toggleCheckItemFields()">
+                            <span>属主</span>
+                        </label>
+                        <div class="attr-fields" id="fileOwnerFields" style="display:none;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>比较基准</label>
+                                    <select id="fileOwnerCompareMode" onchange="toggleCheckItemFields()">
+                                        <option value="snapshot">与快照比较</option>
+                                        <option value="specified">指定用户</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" id="fileOwnerSpecifiedField" style="display:none;">
+                                <input type="text" id="fileOwnerValue" placeholder="root 或 0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 属组检查 -->
+                    <div class="attr-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="checkFileGroup" onchange="toggleCheckItemFields()">
+                            <span>属组</span>
+                        </label>
+                        <div class="attr-fields" id="fileGroupFields" style="display:none;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>比较基准</label>
+                                    <select id="fileGroupCompareMode" onchange="toggleCheckItemFields()">
+                                        <option value="snapshot">与快照比较</option>
+                                        <option value="specified">指定组</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" id="fileGroupSpecifiedField" style="display:none;">
+                                <input type="text" id="fileGroupValue" placeholder="root 或 0">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 权限检查 -->
+                    <div class="attr-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="checkFilePermissions" onchange="toggleCheckItemFields()">
+                            <span>文件权限</span>
+                        </label>
+                        <div class="attr-fields" id="filePermissionsFields" style="display:none;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>比较基准</label>
+                                    <select id="filePermissionsCompareMode" onchange="toggleCheckItemFields()">
+                                        <option value="snapshot">与快照比较</option>
+                                        <option value="specified">指定权限</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" id="filePermissionsSpecifiedField" style="display:none;">
+                                <input type="text" id="filePermissionsValue" placeholder="755">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MD5检查 -->
+                    <div class="attr-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="checkFileMd5" onchange="toggleCheckItemFields()">
+                            <span>MD5码</span>
+                        </label>
+                        <div class="attr-fields" id="fileMd5Fields" style="display:none;">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>比较基准</label>
+                                    <select id="fileMd5CompareMode" onchange="toggleCheckItemFields()">
+                                        <option value="snapshot">与快照比较</option>
+                                        <option value="specified">指定MD5值</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group" id="fileMd5SpecifiedField" style="display:none;">
+                                <input type="text" id="fileMd5Value" placeholder="32位MD5值">
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                
-                <!-- 文件系统检查字段 -->
-                <div class="form-group" id="filesystemCheckFields" style="display:none">
-                    <label>挂载点</label>
-                    <input type="text" id="filesystemMountPoint" placeholder="/" value="/">
+
+                <!-- ==================== 文件内容检查 ==================== -->
+                <div id="contentCheckFields" style="display:none;">
+                    <div class="form-group">
+                        <label>文件路径 *</label>
+                        <input type="text" id="contentFilePath" placeholder="/etc/hosts">
+                    </div>
+
+                    <div class="form-group">
+                        <label>文件类型 *</label>
+                        <select id="contentFileType" onchange="toggleContentCheckFields()">
+                            <option value="text">普通文本文件</option>
+                            <option value="kernel">内核参数文件</option>
+                        </select>
+                    </div>
+
+                    <!-- 普通文本文件 -->
+                    <div id="textFileFields">
+                        <div class="form-group">
+                            <label>比较模式</label>
+                            <select id="textCompareMode" onchange="toggleTextCompareFields()">
+                                <option value="full">完整内容比较</option>
+                                <option value="partial">部分内容比较</option>
+                                <option value="contains">包含指定文本</option>
+                                <option value="not_contains">不包含指定文本</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="textContentField" style="display:none;">
+                            <label>指定文本</label>
+                            <textarea id="textContent" rows="2" placeholder="输入要比较或查找的文本"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- 内核参数文件 -->
+                    <div id="kernelFileFields" style="display:none;">
+                        <div class="form-group">
+                            <label>比较模式</label>
+                            <select id="kernelCompareMode" onchange="toggleKernelCompareFields()">
+                                <option value="snapshot">与快照比较</option>
+                                <option value="specified">指定参数值</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="kernelValueField" style="display:none;">
+                            <label>参数值</label>
+                            <input type="text" id="kernelParamValue" placeholder="1 或 0（支持正则）">
+                        </div>
+                    </div>
                 </div>
-                
-                <!-- 网络检查字段 -->
-                <div class="form-group" id="networkCheckFields" style="display:none">
-                    <label>端口</label>
-                    <input type="number" id="networkPort" placeholder="80" min="1" max="65535">
+
+                <!-- ==================== 路由表检查 ==================== -->
+                <div id="routeCheckFields" style="display:none;">
+                    <div class="form-group">
+                        <label>路由表模式 *</label>
+                        <select id="routeTableMode" onchange="toggleRouteCheckFields()">
+                            <option value="full">采集当前系统的全量路由表信息</option>
+                            <option value="check">检查是否包含指定的路由规则</option>
+                        </select>
+                    </div>
+                    <div id="routeRuleField" style="display:none;">
+                        <div class="form-group">
+                            <label>路由规则</label>
+                            <input type="text" id="routeRule" placeholder="192.168.1.0/24 via 192.168.1.1 dev eth0">
+                            <small style="color:#999;">格式：目标网络 via 下一跳 dev 接口</small>
+                        </div>
+                    </div>
                 </div>
-                
-                <!-- 服务检查字段 -->
-                <div class="form-group" id="serviceCheckFields" style="display:none">
-                    <label>服务名称</label>
-                    <input type="text" id="serviceName" placeholder="ssh">
-                </div>
-                
-                <!-- 日志检查字段 -->
-                <div class="form-group" id="logCheckFields" style="display:none">
-                    <label>搜索模式</label>
-                    <input type="text" id="logPattern" placeholder="错误">
-                </div>
-                
-                <!-- 进程检查字段 -->
-                <div class="form-group" id="processCheckFields" style="display:none">
-                    <label>进程名称</label>
-                    <input type="text" id="processName" placeholder="nginx">
-                </div>
-                
 
                 <div class="form-group">
                     <label>描述</label>
-                    <input type="text" id="checkItemDesc">
+                    <input type="text" id="checkItemDesc" placeholder="简要描述检查项用途">
                 </div>
                 <button type="submit" class="btn btn-primary" style="width:100%">保存</button>
             </form>
@@ -933,1433 +1189,96 @@
             </form>
         </div>
     </div>
-    
+
+    <!-- 快照构建对话框 -->
+    <div class="modal" id="snapshotBuildModal">
+        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>快照构建</h3>
+                <button class="modal-close" onclick="closeSnapshotBuildModal()">&times;</button>
+            </div>
+            <form id="snapshotBuildForm">
+                <div class="form-group">
+                    <label>快照名称 *</label>
+                    <input type="text" id="buildSnapshotName" placeholder="输入快照名称，系统将自动附加时间戳" required>
+                </div>
+                <div class="form-group">
+                    <label>目标快照组 *</label>
+                    <select id="buildSnapshotGroup" required></select>
+                </div>
+                <div class="form-group">
+                    <label>选择通信机组</label>
+                    <div id="commGroupTree" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 6px;"></div>
+                </div>
+                <div id="buildSelectionCount" style="margin: 10px 0; color: #666;">已选: 0台, 0组</div>
+                <div style="display:flex; gap:10px; margin-top:20px;">
+                    <button type="button" class="btn btn-primary" style="flex:1;" onclick="startSnapshotBuild()">开始构建</button>
+                    <button type="button" class="btn btn-default" style="flex:1;" onclick="closeSnapshotBuildModal()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 构建进度对话框 -->
+    <div class="modal" id="snapshotBuildProgressModal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h3>快照构建进度: <span id="buildProgressName"></span></h3>
+                <button class="modal-close" onclick="closeBuildProgressModal()">&times;</button>
+            </div>
+            <div>
+                <div style="margin-bottom:15px;">
+                    <div>总体进度: <span id="buildProgressText"></span></div>
+                    <div style="height:20px; background:#eee; border-radius:10px; overflow:hidden;">
+                        <div id="buildOverallProgress" style="height:100%; background:#52c41a; width:0%; transition:width 0.3s;"></div>
+                    </div>
+                </div>
+                <div id="buildGroupsProgress"></div>
+                <div style="margin-top:20px; text-align:right;">
+                    <button class="btn btn-danger" id="cancelBuildBtn">取消构建</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 检查执行弹窗 -->
     <div class="modal" id="checkModal">
         <div class="modal-content">
             <div class="modal-header">
                 <h3>启动检查</h3>
-                <button class="modal-close" onclick="closeModal('checkModal')">&times;</button>
+                <button class="modal-close" onclick="closeCheckModal()">&times;</button>
             </div>
             <form id="checkForm">
                 <div class="form-group">
-                    <label>检查规则</label>
-                    <select id="checkRule">
+                    <label>检查规则 *</label>
+                    <select id="checkRule" required>
                         <option value="">请选择规则</option>
                     </select>
                 </div>
                 <div class="form-group">
-                    <label>通信机</label>
-                    <select id="checkCommunication">
+                    <label>通信机 *</label>
+                    <select id="checkCommunication" required>
                         <option value="">请选择通信机</option>
                     </select>
                 </div>
-                <button type="submit" class="btn btn-primary" style="width:100%">启动检查</button>
+                <div class="form-group">
+                    <label>快照 *</label>
+                    <select id="checkSnapshot" required>
+                        <option value="">请选择快照</option>
+                    </select>
+                </div>
+                <div style="margin-top:20px; display:flex; gap:10px;">
+                    <button type="button" class="btn btn-primary" style="flex:1;" onclick="startCheck()">启动检查</button>
+                    <button type="button" class="btn btn-default" style="flex:1;" onclick="closeCheckModal()">取消</button>
+                </div>
             </form>
         </div>
     </div>
 
-    <script>
-        const API_BASE = '';
-        let token = localStorage.getItem('token');
-        let currentGroupId = '';
-        let currentSnapshotGroupId = '';
-        // 从localStorage加载通信机连接状态，持久化存储
-        let communicationStatuses = JSON.parse(localStorage.getItem('communicationStatuses') || '{}');
-        
-        if (!token) window.location.href = '/login.html';
-        document.getElementById('currentUser').textContent = '用户: ' + (localStorage.getItem('username') || '未知');
-        
-        // 启动定时检查通信机状态的任务（每分钟执行一次）
-        setInterval(checkAllCommunicationStatuses, 60000);
-        
-        function logout() {
-            localStorage.removeItem('token');
-            localStorage.removeItem('username');
-            window.location.href = '/login.html';
-        }
-        
-        function getHeaders() {
-            return { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
-        }
-        
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(tab.dataset.tab).classList.add('active');
-            });
-        });
-        
-        async function refreshData() {
-            await Promise.all([
-                loadCommunications(),
-                loadCheckItemLists(),
-                loadCheckItems(),
-                loadSnapshots(),
-                loadCheckResults(),
-                loadReports(),
-                loadStats(),
-                loadGroups()
-            ]);
-        }
-        
-        async function loadStats() {
-            try {
-                const [commRes, itemRes, snapRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() }),
-                    fetch(`${API_BASE}/api/v1/check-items`, { headers: getHeaders() }),
-                    fetch(`${API_BASE}/api/v1/snapshots`, { headers: getHeaders() })
-                ]);
-                const comms = await commRes.json();
-                const items = await itemRes.json();
-                const snaps = await snapRes.json();
-                
-                const commCountEl = document.getElementById('commCount');
-                const checkItemCountEl = document.getElementById('checkItemCount');
-                const snapshotCountEl = document.getElementById('snapshotCount');
-                
-                if (commCountEl) commCountEl.textContent = comms.length;
-                if (checkItemCountEl) checkItemCountEl.textContent = items.length;
-                if (snapshotCountEl) snapshotCountEl.textContent = snaps.length;
-            } catch (e) { console.error(e); }
-        }
-        
-        async function loadGroups() {
-            try {
-                const [groupsRes, commsRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/v1/communications/groups`, { headers: getHeaders() }),
-                    fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() })
-                ]);
-                const groups = await groupsRes.json();
-                const comms = await commsRes.json();
-                
-                const getCountByGroup = (groupId) => {
-                    if (groupId === '' || groupId === null) return comms.length;
-                    return comms.filter(c => c.group_id === groupId).length;
-                };
-                
-                const tree = document.getElementById('groupTree');
-                tree.innerHTML = `
-                    <li>
-                        <div class="group-item ${currentGroupId === '' ? 'active' : ''}" data-group-id="" onclick="filterByGroup('')">
-                            <span class="icon">📁</span>
-                            <span>全部通信机</span>
-                            <span class="count">${getCountByGroup('')}</span>
-                        </div>
-                    </li>
-                    ${groups.map(g => `
-                        <li>
-                            <div class="group-item ${currentGroupId == g.id ? 'active' : ''}" data-group-id="${g.id}" onclick="filterByGroup(${g.id})">
-                                <span class="icon">📂</span>
-                                <span>${g.name}</span>
-                                <span class="count">${getCountByGroup(g.id)}</span>
-                            </div>
-                        </li>
-                    `).join('')}
-                `;
-            } catch (e) { console.error(e); }
-        }
-        
-        function filterByGroup(groupId) {
-            currentGroupId = groupId;
-            document.querySelectorAll('.group-item').forEach(item => {
-                item.classList.toggle('active', item.dataset.groupId == groupId);
-            });
-            loadCommunications();
-        }
-        
-        async function loadCommunications() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() });
-                let comms = await res.json();
-                
-                if (currentGroupId) {
-                    comms = comms.filter(c => c.group_id == currentGroupId);
-                }
-                
-                const searchTerm = document.getElementById('commSearch')?.value?.toLowerCase() || '';
-                if (searchTerm) {
-                    comms = comms.filter(c => 
-                        c.name.toLowerCase().includes(searchTerm) || 
-                        c.ip_address.toLowerCase().includes(searchTerm)
-                    );
-                }
-                
-                const tbody = document.getElementById('commTable');
-                if (comms.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无数据</td></tr>';
-                    return;
-                }
-                
-                tbody.innerHTML = comms.map(c => {
-                    // 获取本地存储的连接状态，默认为'unknown'
-                    const status = communicationStatuses[c.id] || 'unknown';
-                    return `
-                        <tr>
-                            <td>${c.name}</td>
-                            <td>${c.ip_address}</td>
-                            <td>${c.port}</td>
-                            <td>${c.username}</td>
-                            <td>
-                                <span class="status-badge ${status === 'online' ? 'success' : status === 'offline' ? 'error' : 'info'}">
-                                    <span class="status-dot ${status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown'}"></span>
-                                    ${status === 'online' ? '在线' : status === 'offline' ? '离线' : '未连接'}
-                                </span>
-                            </td>
-                            <td>
-                                <button class="btn btn-primary btn-sm" onclick="testConnection(${c.id})")">测试</button>
-                                <button class="btn btn-primary btn-sm" onclick="editComm(${c.id}, '${c.name}', '${c.ip_address}', ${c.port}, '${c.username}', ${c.group_id}, '${c.description || ''}')">编辑</button>
-                                <button class="btn btn-danger btn-sm" onclick="deleteComm(${c.id})")">删除</button>
-                            </td>
-                        </tr>
-                    `;
-                }).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function searchCommunications() {
-            loadCommunications();
-        }
-        
-        async function loadSnapshots() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/snapshots`, { headers: getHeaders() });
-                const data = await res.json();
-                const tbody = document.getElementById('snapshotTable');
-                tbody.innerHTML = data.map(s => `
-                    <tr>
-                        <td>${s.id}</td>
-                        <td>${s.name}</td>
-                        <td>${s.group_id}</td>
-                        <td>${new Date(s.snapshot_time).toLocaleString()}</td>
-                        <td><span class="status-badge ${s.is_default ? 'success' : 'info'}">${s.is_default ? '是' : '否'}</span></td>
-                        <td><button class="btn btn-danger btn-sm" onclick="deleteSnapshot(${s.id})">删除</button></td>
-                    </tr>
-                `).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        async function loadCheckResults() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/checks`, { headers: getHeaders() });
-                const data = await res.json();
-                const tbody = document.getElementById('checkTable');
-                tbody.innerHTML = data.map(c => `
-                    <tr>
-                        <td>${c.id}</td>
-                        <td>${c.rule_id || '-'}</td>
-                        <td>${c.communication_id || '-'}</td>
-                        <td><span class="status-badge ${c.status === 'success' ? 'success' : c.status === 'running' ? 'warning' : 'error'}">${c.status}</span></td>
-                        <td>${c.progress}%</td>
-                        <td>${new Date(c.start_time).toLocaleString()}</td>
-                        <td><button class="btn btn-primary btn-sm" onclick="viewCheckResult(${c.id})">查看</button></td>
-                    </tr>
-                `).join('');
-                if (data.length > 0) {
-                    const lastStatus = data[0].status;
-                    const el = document.getElementById('lastCheckStatus');
-                    el.textContent = lastStatus === 'success' ? '通过' : lastStatus === 'running' ? '进行中' : '失败';
-                    el.className = 'value ' + (lastStatus === 'success' ? 'success' : lastStatus === 'running' ? 'warning' : 'error');
-                }
-            } catch (e) { console.error(e); }
-        }
-        
-        async function loadSSHKeys() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/keys`, { headers: getHeaders() });
-                const data = await res.json();
-                const tbody = document.getElementById('sshKeyTable');
-                tbody.innerHTML = data.map(k => `
-                    <tr>
-                        <td>${k.id}</td>
-                        <td>${k.name}</td>
-                        <td><code style="font-size:11px">${k.public_key ? k.public_key.substring(0, 50) + '...' : '-'}</code></td>
-                        <td><span class="status-badge ${k.is_active ? 'success' : 'error'}">${k.is_active ? '启用' : '禁用'}</span></td>
-                        <td>${new Date(k.created_at).toLocaleString()}</td>
-                        <td><button class="btn btn-danger btn-sm" onclick="deleteSSHKey(${k.id})">删除</button></td>
-                    </tr>
-                `).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        let allReports = [];
-        
-        async function loadReports() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/checks`, { headers: getHeaders() });
-                allReports = await res.json();
-                renderReports(allReports);
-            } catch (e) { console.error(e); }
-        }
-        
-        function renderReports(reports) {
-            const tbody = document.getElementById('reportTable');
-            tbody.innerHTML = reports.map(r => `
-                <tr>
-                    <td>${r.id}</td>
-                    <td>${r.rule_id || '-'}</td>
-                    <td>${r.communication_id || '-'}</td>
-                    <td><span class="status-badge ${r.status === 'success' ? 'success' : r.status === 'running' ? 'warning' : 'error'}">${r.status === 'success' ? '通过' : r.status === 'running' ? '进行中' : r.status === 'failed' ? '失败' : r.status}</span></td>
-                    <td>${r.progress}%</td>
-                    <td>${new Date(r.start_time).toLocaleString()}</td>
-                    <td>${r.end_time ? new Date(r.end_time).toLocaleString() : '-'}</td>
-                    <td>
-                        <button class="btn btn-primary btn-sm" onclick="viewReportDetail(${r.id})">详情</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteCheckResult(${r.id})">删除</button>
-                    </td>
-                </tr>
-            `).join('');
-        }
-        
-        function searchReports() {
-            const keyword = document.getElementById('reportSearch').value.toLowerCase();
-            const filtered = allReports.filter(r => 
-                String(r.id).includes(keyword) || 
-                String(r.rule_id).includes(keyword) ||
-                String(r.communication_id).includes(keyword) ||
-                r.status.includes(keyword)
-            );
-            renderReports(filtered);
-        }
-        
-        async function viewReportDetail(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/checks/${id}`, { headers: getHeaders() });
-                const data = await res.json();
-                const content = document.getElementById('reportDetailContent');
-                const statusText = data.status === 'success' ? '通过' : data.status === 'running' ? '进行中' : data.status === 'failed' ? '失败' : data.status;
-                content.innerHTML = `
-                    <div style="margin-bottom:15px;">
-                        <div><strong>规则ID:</strong> ${data.rule_id || '-'}</div>
-                        <div><strong>通信机ID:</strong> ${data.communication_id || '-'}</div>
-                        <div><strong>状态:</strong> <span class="status-badge ${data.status === 'success' ? 'success' : data.status === 'running' ? 'warning' : 'error'}">${statusText}</span></div>
-                        <div><strong>进度:</strong> ${data.progress}%</div>
-                        <div><strong>开始时间:</strong> ${new Date(data.start_time).toLocaleString()}</div>
-                        <div><strong>结束时间:</strong> ${data.end_time ? new Date(data.end_time).toLocaleString() : '-'}</div>
-                        ${data.error_message ? `<div style="color:#f5222d;margin-top:10px;"><strong>错误信息:</strong> ${data.error_message}</div>` : ''}
-                    </div>
-                    <h4 style="margin:15px 0 10px;">检查详情</h4>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>检查项ID</th>
-                                <th>状态</th>
-                                <th>期望值</th>
-                                <th>实际值</th>
-                                <th>消息</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.details && data.details.length > 0 ? data.details.map(d => `
-                                <tr>
-                                    <td>${d.check_item_id}</td>
-                                    <td><span class="status-badge ${d.status === 'success' ? 'success' : d.status === 'warning' ? 'warning' : 'error'}">${d.status === 'success' ? '通过' : d.status === 'warning' ? '警告' : '失败'}</span></td>
-                                    <td>${JSON.stringify(d.expected_value) || '-'}</td>
-                                    <td>${JSON.stringify(d.actual_value) || '-'}</td>
-                                    <td>${d.message || '-'}</td>
-                                </tr>
-                            `).join('') : '<tr><td colspan="5" style="text-align:center;color:#999;">暂无详情</td></tr>'}
-                        </tbody>
-                    </table>
-                `;
-                document.getElementById('reportDetailModal').classList.add('active');
-            } catch (e) { console.error(e); }
-        }
-        
-        async function deleteCheckResult(id) {
-            if (!confirm('确定删除此检查结果?')) return;
-            try {
-                await fetch(`${API_BASE}/api/v1/checks/${id}`, { method: 'DELETE', headers: getHeaders() });
-                loadReports();
-            } catch (e) { console.error(e); }
-        }
-        
-        function exportReport() {
-            if (allReports.length === 0) {
-                alert('没有可导出的数据');
-                return;
-            }
-            const csv = [
-                ['ID', '规则ID', '通信机ID', '状态', '进度', '开始时间', '结束时间'].join(','),
-                ...allReports.map(r => [
-                    r.id, r.rule_id || '', r.communication_id || '', r.status, r.progress,
-                    new Date(r.start_time).toISOString(), r.end_time ? new Date(r.end_time).toISOString() : ''
-                ].join(','))
-            ].join('\n');
-            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `检查报表_${new Date().toISOString().slice(0,10)}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-        
-        async function loadGroupOptions() {
-            const res = await fetch(`${API_BASE}/api/v1/communications/groups`, { headers: getHeaders() });
-            const groups = await res.json();
-            const select = document.getElementById('commGroup');
-            select.innerHTML = '<option value="">未分组</option>' + 
-                groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
-        }
-        
-        async function loadSSHKeysForSelect() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/keys`, { headers: getHeaders() });
-                const keys = await res.json();
-                document.getElementById('commPrivateKey').innerHTML = keys.map(k => 
-                    `<option value="${k.id}">${k.name}</option>`
-                ).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function toggleAuthFields() {
-            const authType = document.getElementById('commAuthType').value;
-            document.getElementById('passwordField').style.display = authType === 'password' ? 'block' : 'none';
-            document.getElementById('keyField').style.display = authType === 'key' ? 'block' : 'none';
-            document.getElementById('deployKeyField').style.display = authType === 'key' ? 'block' : 'none';
-        }
-        
-        function toggleCheckItemFields() {
-            // 获取所有选中的检查类型
-            const selectedTypes = Array.from(document.querySelectorAll('input[name="checkItemType"]:checked')).map(cb => cb.value);
-            
-            // 隐藏所有字段
-            document.getElementById('filePermissionsFields').style.display = 'none';
-            document.getElementById('fileOwnerFields').style.display = 'none';
-            document.getElementById('fileSizeFields').style.display = 'none';
-            document.getElementById('fileMtimeFields').style.display = 'none';
-            document.getElementById('fileContentCheckFields').style.display = 'none';
-            document.getElementById('filesystemCheckFields').style.display = 'none';
-            document.getElementById('networkCheckFields').style.display = 'none';
-            document.getElementById('serviceCheckFields').style.display = 'none';
-            document.getElementById('logCheckFields').style.display = 'none';
-            document.getElementById('processCheckFields').style.display = 'none';
-            
-            // 显示对应字段
-            if (selectedTypes.includes('file_permissions')) {
-                document.getElementById('filePermissionsFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('file_owner')) {
-                document.getElementById('fileOwnerFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('file_size')) {
-                document.getElementById('fileSizeFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('file_mtime')) {
-                document.getElementById('fileMtimeFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('file_content')) {
-                document.getElementById('fileContentCheckFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('filesystem')) {
-                document.getElementById('filesystemCheckFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('network')) {
-                document.getElementById('networkCheckFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('service')) {
-                document.getElementById('serviceCheckFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('log')) {
-                document.getElementById('logCheckFields').style.display = 'block';
-            }
-            if (selectedTypes.includes('process')) {
-                document.getElementById('processCheckFields').style.display = 'block';
-            }
-        }
-        
-        async function loadCheckItemLists() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/lists`, { headers: getHeaders() });
-                if (!res.ok) {
-                    const error = await res.json();
-                    console.error('加载检查项列表失败:', error);
-                    return;
-                }
-                const data = await res.json();
-                // 确保 lists 是数组
-                const lists = Array.isArray(data) ? data : [];
-                const tree = document.getElementById('checkItemListTree');
-                
-                // 保留默认的"全部检查项"选项
-                tree.innerHTML = `
-                    <li>
-                        <div class="group-item active" data-list-id="" onclick="selectCheckItemList('')">
-                            <span class="icon">📁</span>
-                            <span>全部检查项</span>
-                        </div>
-                    </li>
-                `;
-                
-                // 添加检查项列表
-                lists.forEach(list => {
-                    const listItem = document.createElement('li');
-                    listItem.innerHTML = `
-                        <div class="group-item" data-list-id="${list.id}" onclick="selectCheckItemList(${list.id})"><span class="icon">📋</span>
-                            <span>${list.name}</span>
-                            <div class="list-actions">
-                                <button class="btn btn-xs" onclick="editCheckItemList(${list.id}); event.stopPropagation();">✏️</button>
-                                <button class="btn btn-xs" onclick="cloneCheckItemList(${list.id}); event.stopPropagation();">📋</button>
-                                <button class="btn btn-xs" onclick="deleteCheckItemList(${list.id}); event.stopPropagation();">🗑️</button>
-                            </div>
-                        </div>
-                    `;
-                    tree.appendChild(listItem);
-                });
-            } catch (e) {
-                console.error('加载检查项列表异常:', e);
-                alert('❌ 加载检查项列表失败，请刷新页面重试');
-            }
-        }
-        
-        let currentCheckItemListId = '';
-        let currentCheckItemListName = '';
-        
-        function selectCheckItemList(listId) {
-            currentCheckItemListId = listId;
-            
-            // 更新选中状态
-            document.querySelectorAll('#checkItemListTree .group-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            const activeItem = document.querySelector(`#checkItemListTree .group-item[data-list-id="${listId}"]`);
-            if (activeItem) {
-                activeItem.classList.add('active');
-                // 更新当前检查项列表名称
-                const listName = activeItem.querySelector('span:not(.icon):not(.list-actions)').textContent;
-                currentCheckItemListName = listName === '全部检查项' ? '检查项管理' : listName;
-                document.getElementById('currentCheckItemListName').textContent = currentCheckItemListName;
-            }
-            
-            // 加载对应检查项
-            loadCheckItems();
-        }
-        
-        async function loadCheckItems() {
-            try {
-                let url = `${API_BASE}/api/v1/check-items`;
-                if (currentCheckItemListId) {
-                    url = `${API_BASE}/api/v1/check-items/lists/${currentCheckItemListId}`;
-                }
-                
-                const res = await fetch(url, { headers: getHeaders() });
-                const items = await res.json();
-                const tbody = document.getElementById('checkItemTable');
-                
-                // 如果是检查项列表，提取items
-                const checkItems = currentCheckItemListId ? items.items || [] : items;
-                
-                tbody.innerHTML = checkItems.map(item => `
-                    <tr>
-                        <td>${item.id}</td>
-                        <td>${item.name}</td>
-                        <td>${item.type}</td>
-                        <td>${item.target_path || '-'}</td>
-                        <td>${currentCheckItemListId ? currentCheckItemListName : '-'}</td>
-                        <td>${item.description || '-'}</td>
-                        <td>
-                            <button class="btn btn-primary btn-sm" onclick="editCheckItem(${item.id})">编辑</button>
-                            <button class="btn btn-primary btn-sm" onclick="cloneCheckItem(${item.id})">克隆</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteCheckItem(${item.id})">删除</button>
-                        </td>
-                    </tr>
-                `).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function openCheckItemListModal(id = null) {
-            document.getElementById('checkItemListId').value = id || '';
-            document.getElementById('checkItemListName').value = '';
-            document.getElementById('checkItemListDesc').value = '';
-            document.getElementById('checkItemListModalTitle').textContent = id ? '编辑检查项列表' : '添加检查项列表';
-            document.getElementById('checkItemListModal').classList.add('active');
-        }
-        
-        async function loadCheckItemsForList() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items`, { headers: getHeaders() });
-                const items = await res.json();
-                const select = document.getElementById('checkItemListItems');
-                select.innerHTML = items.map(item => 
-                    `<option value="${item.id}">${item.name} (${item.type})</option>`
-                ).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        async function editCheckItemList(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { headers: getHeaders() });
-                const list = await res.json();
-                document.getElementById('checkItemListId').value = id;
-                document.getElementById('checkItemListName').value = list.name;
-                document.getElementById('checkItemListDesc').value = list.description || '';
-                document.getElementById('checkItemListModalTitle').textContent = '编辑检查项列表';
-                document.getElementById('checkItemListModal').classList.add('active');
-            } catch (e) { console.error(e); }
-        }
-        
-        async function cloneCheckItemList(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { headers: getHeaders() });
-                const list = await res.json();
-                
-                const newName = list.name + ' (复制)';
-                
-                // 调用后端复制API
-                const copyRes = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}/copy`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({ new_name: newName })
-                });
-                
-                if (copyRes.ok) {
-                    alert('✅ 检查项列表克隆成功！');
-                    loadCheckItemLists();
-                } else {
-                    const error = await copyRes.json();
-                    alert('❌ 克隆失败: ' + (error.detail || '未知错误'));
-                }
-            } catch (e) {
-                console.error(e);
-                alert('❌ 克隆异常');
-            }
-        }
-        
-        async function deleteCheckItemList(id) {
-            if (!confirm('确定删除?')) return;
-            try {
-                await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { 
-                    method: 'DELETE', 
-                    headers: getHeaders() 
-                });
-                loadCheckItemLists();
-            } catch (e) { console.error(e); }
-        }
-        
-        function openCommModal(id = null) {
-            loadGroupOptions();
-            loadSSHKeysForSelect();
-            document.getElementById('commModal').classList.add('active');
-            document.getElementById('commModalTitle').textContent = id ? '编辑通信机' : '添加通信机';
-            document.getElementById('commId').value = id || '';
-        }
-        
-        function editComm(id, name, ip, port, username, groupId, desc) {
-            // 先获取通信机详细信息以获取认证类型
-            fetch(`${API_BASE}/api/v1/communications/${id}`, { headers: getHeaders() })
-                .then(res => res.json())
-                .then(comm => {
-                    document.getElementById('commId').value = id;
-                    document.getElementById('commName').value = name;
-                    document.getElementById('commIp').value = ip;
-                    document.getElementById('commPort').value = port;
-                    document.getElementById('commUsername').value = username;
-                    document.getElementById('commDesc').value = desc;
-                    
-                    // 设置认证类型
-                    const authType = comm.private_key_path ? 'key' : 'password';
-                    document.getElementById('commAuthType').value = authType;
-                    
-                    // 加载 SSH 密钥并设置选中的密钥
-                    loadSSHKeysForSelect('commPrivateKey').then(() => {
-                        if (comm.private_key_path && comm.private_key_path.startsWith('key_')) {
-                            const keyId = comm.private_key_path.replace('key_', '');
-                            document.getElementById('commPrivateKey').value = keyId;
-                        }
-                    });
-                    
-                    // 加载分组并设置选中的分组
-                    loadGroupOptions().then(() => {
-                        document.getElementById('commGroup').value = groupId || '';
-                    });
-                    
-                    // 显示对应字段
-                    toggleAuthFields();
-                    
-                    document.getElementById('commModal').classList.add('active');
-                    document.getElementById('commModalTitle').textContent = '编辑通信机';
-                });
-        }
-        
-        document.getElementById('commForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('commId').value;
-            const groupIdEl = document.getElementById('commGroup');
-            const authType = document.getElementById('commAuthType').value;
-            const privateKeyEl = document.getElementById('commPrivateKey');
-            
-            let privateKeyPath = null;
-            if (authType === 'key' && privateKeyEl.value) {
-                privateKeyPath = "key_" + privateKeyEl.value;
-            }
-            
-            const data = {
-                name: document.getElementById('commName').value,
-                ip_address: document.getElementById('commIp').value,
-                port: parseInt(document.getElementById('commPort').value) || 22,
-                username: document.getElementById('commUsername').value || 'root',
-                group_id: groupIdEl.value ? parseInt(groupIdEl.value) : null,
-                password: authType === 'password' ? (document.getElementById('commPassword').value || null) : null,
-                private_key_path: privateKeyPath,
-                description: document.getElementById('commDesc').value || null
-            };
-            
-            // 保存通信机信息
-            const url = id ? `${API_BASE}/api/v1/communications/${id}` : `${API_BASE}/api/v1/communications`;
-            const method = id ? 'PUT' : 'POST';
-            const response = await fetch(url, { method, headers: getHeaders(), body: JSON.stringify(data) });
-            const commData = await response.json();
-            
-            // 如果选择了密钥认证，部署公钥
-            if (authType === 'key' && privateKeyEl.value) {
-                const deployPassword = document.getElementById('commDeployPassword').value;
-                if (!deployPassword) {
-                    alert('请输入部署公钥的密码');
-                    return;
-                }
-                
-                const deployResponse = await fetch(`${API_BASE}/api/v1/deploy-ssh-key`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({
-                        communication_id: commData.id || id,
-                        ssh_key_id: privateKeyEl.value,
-                        password: deployPassword
-                    })
-                });
-                
-                const deployResult = await deployResponse.json();
-                if (deployResult.status === 'error') {
-                    alert('公钥部署失败: ' + deployResult.message);
-                    return;
-                } else {
-                    alert('公钥部署成功！');
-                }
-            }
-            
-            closeModal('commModal');
-            loadCommunications();
-        });
-        
-        async function deleteComm(id) {
-            if (!confirm('确定删除?')) return;
-            await fetch(`${API_BASE}/api/v1/communications/${id}`, { method: 'DELETE', headers: getHeaders() });
-            loadCommunications();
-        }
-
-        // Excel 导入功能
-        function openExcelImportModal() {
-            // 加载 SSH 密钥
-            loadSSHKeysForSelect('excelSshKey');
-            // 重置表单
-            document.getElementById('excelImportForm').reset();
-            document.getElementById('sshKeySelectGroup').style.display = 'none';
-            document.getElementById('deployPasswordGroup').style.display = 'none';
-            // 显示模态框
-            document.getElementById('excelImportModal').classList.add('active');
-        }
-
-        function toggleDeployFields() {
-            const deployPublicKey = document.getElementById('deployPublicKey').checked;
-            document.getElementById('sshKeySelectGroup').style.display = deployPublicKey ? 'block' : 'none';
-            document.getElementById('deployPasswordGroup').style.display = deployPublicKey ? 'block' : 'none';
-        }
-
-        // 批量部署公钥功能
-        async function openBatchDeployModal() {
-            // 加载 SSH 密钥
-            loadSSHKeysForSelect('batchSshKey');
-            // 加载通信机列表
-            await loadCommunicationsForBatchDeploy();
-            // 重置表单
-            document.getElementById('batchDeployForm').reset();
-            // 显示模态框
-            document.getElementById('batchDeployModal').classList.add('active');
-        }
-
-        async function loadCommunicationsForBatchDeploy() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() });
-                const comms = await res.json();
-                const checkboxList = document.getElementById('commCheckboxList');
-                checkboxList.innerHTML = comms.map(comm => `
-                    <label style="display: block; margin: 5px 0;">
-                        <input type="checkbox" name="commId" value="${comm.id}">
-                        ${comm.name} (${comm.ip_address}:${comm.port})
-                    </label>
-                `).join('');
-            } catch (e) {
-                console.error('加载通信机列表失败:', e);
-            }
-        }
-
-        // 加载 SSH 密钥到下拉选择框
-        async function loadSSHKeysForSelect(selectId) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/keys`, { headers: getHeaders() });
-                const keys = await res.json();
-                const select = document.getElementById(selectId);
-                select.innerHTML = '<option value="">请选择 SSH 密钥</option>';
-                keys.forEach(key => {
-                    select.innerHTML += `<option value="${key.id}">${key.name}</option>`;
-                });
-            } catch (e) {
-                console.error('加载 SSH 密钥失败:', e);
-            }
-        }
-
-        // 处理 Excel 导入表单提交
-        document.getElementById('excelImportForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            console.log('Excel导入表单提交开始');
-            
-            const fileInput = document.getElementById('excelFile');
-            const deployPublicKey = document.getElementById('deployPublicKey').checked;
-            const sshKeyId = document.getElementById('excelSshKey').value;
-            const deployPassword = document.getElementById('deployPassword').value;
-
-            console.log('文件选择:', fileInput.files.length > 0 ? '已选择' : '未选择');
-            console.log('部署公钥:', deployPublicKey);
-            console.log('SSH密钥ID:', sshKeyId);
-            console.log('部署密码:', deployPassword ? '已输入' : '未输入');
-
-            if (!fileInput.files.length) {
-                alert('请选择 Excel 文件');
-                return;
-            }
-
-            if (deployPublicKey && (!sshKeyId || !deployPassword)) {
-                alert('请选择 SSH 密钥并输入部署密码');
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            formData.append('deploy_public_key', deployPublicKey);
-            if (deployPublicKey) {
-                formData.append('ssh_key_id', sshKeyId);
-                formData.append('deploy_password', deployPassword);
-            }
-
-            console.log('FormData准备完成，开始发送请求');
-
-            try {
-                console.log('API地址:', `${API_BASE}/api/v1/communications/import-excel`);
-                console.log('Token:', localStorage.getItem('token') ? '已存在' : '不存在');
-                
-                const response = await fetch(`${API_BASE}/api/v1/communications/import-excel`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    },
-                    body: formData
-                });
-                
-                console.log('响应状态:', response.status);
-                
-                const result = await response.json();
-                console.log('响应数据:', result);
-                
-                if (response.ok) {
-                    alert(`✅ 导入成功！导入 ${result.imported} 台通信机`);
-                    if (deployPublicKey && result.deployment) {
-                        alert(`✅ 公钥部署结果：成功 ${result.deployment.success.length} 台，失败 ${result.deployment.failed.length} 台`);
-                    }
-                    closeModal('excelImportModal');
-                    loadCommunications();
-                } else {
-                    alert(`❌ 导入失败：${result.detail || '未知错误'}`);
-                }
-            } catch (e) {
-                console.error('导入失败:', e);
-                alert('❌ 导入失败，请重试');
-            }
-        });
-
-        // 处理批量部署公钥表单提交
-        document.getElementById('batchDeployForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const sshKeyId = document.getElementById('batchSshKey').value;
-            const deployPassword = document.getElementById('batchDeployPassword').value;
-            const checkboxes = document.querySelectorAll('input[name="commId"]:checked');
-            const commIds = Array.from(checkboxes).map(cb => cb.value);
-
-            if (!sshKeyId) {
-                alert('请选择 SSH 密钥');
-                return;
-            }
-
-            if (!deployPassword) {
-                alert('请输入部署密码');
-                return;
-            }
-
-            if (commIds.length === 0) {
-                alert('请选择至少一台通信机');
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}/api/v1/communications/batch-deploy-ssh-key`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({
-                        communication_ids: commIds,
-                        ssh_key_id: sshKeyId,
-                        password: deployPassword
-                    })
-                });
-                
-                const result = await response.json();
-                if (response.ok) {
-                    alert(`✅ 批量部署完成！成功 ${result.success.length} 台，失败 ${result.failed.length} 台`);
-                    closeModal('batchDeployModal');
-                } else {
-                    alert(`❌ 部署失败：${result.detail || '未知错误'}`);
-                }
-            } catch (e) {
-                console.error('部署失败:', e);
-                alert('❌ 部署失败，请重试');
-            }
-        });
-
-        // 下载Excel模板
-        function downloadExcelTemplate() {
-            // 生成CSV内容
-            const csvContent = `名称,IP地址,端口,用户名,描述,通信机分组
-通信机1,192.168.1.1,22,root,测试通信机1,本地
-通信机2,192.168.1.2,22,admin,测试通信机2,
-通信机3,192.168.1.3,2222,root,测试通信机3,生产环境`;
-
-            // 创建Blob对象
-            const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `通信机导入模板_${new Date().toISOString().slice(0,10)}.csv`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-        
-        async function testConnection(id) {
-            const btn = event.target;
-            btn.textContent = '测试中...';
-            btn.disabled = true;
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/test-connection`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({ communication_id: id })
-                });
-                const result = await res.json();
-                console.log('Test connection result:', result);
-                
-                // 更新本地存储的连接状态
-                if (result.status === 'success') {
-                    communicationStatuses[id] = 'online';
-                    alert('✅ 连接成功');
-                } else {
-                    communicationStatuses[id] = 'offline';
-                    alert('❌ 连接失败: ' + result.message);
-                }
-                
-                // 保存状态到localStorage
-                localStorage.setItem('communicationStatuses', JSON.stringify(communicationStatuses));
-                
-                // 重新加载通信机列表以更新状态显示
-                loadCommunications();
-            } catch (e) {
-                console.error('Test connection error:', e);
-                communicationStatuses[id] = 'offline';
-                // 保存状态到localStorage
-                localStorage.setItem('communicationStatuses', JSON.stringify(communicationStatuses));
-                alert('❌ 测试异常');
-                loadCommunications();
-            }
-            btn.textContent = '测试';
-            btn.disabled = false;
-        }
-        
-        // 定时检查所有通信机的连接状态
-        async function checkAllCommunicationStatuses() {
-            try {
-                // 获取所有通信机列表
-                const res = await fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() });
-                const comms = await res.json();
-                
-                // 遍历通信机，逐个测试连接
-                for (const comm of comms) {
-                    try {
-                        const testRes = await fetch(`${API_BASE}/api/v1/test-connection`, {
-                            method: 'POST',
-                            headers: getHeaders(),
-                            body: JSON.stringify({ communication_id: comm.id })
-                        });
-                        const result = await testRes.json();
-                        
-                        // 更新本地存储的连接状态
-                        if (result.status === 'success') {
-                            communicationStatuses[comm.id] = 'online';
-                        } else {
-                            communicationStatuses[comm.id] = 'offline';
-                        }
-                        
-                        // 保存状态到localStorage
-                        localStorage.setItem('communicationStatuses', JSON.stringify(communicationStatuses));
-                    } catch (e) {
-                        console.error(`检查通信机 ${comm.name} 状态时出错:`, e);
-                        communicationStatuses[comm.id] = 'offline';
-                        // 保存状态到localStorage
-                        localStorage.setItem('communicationStatuses', JSON.stringify(communicationStatuses));
-                    }
-                }
-                
-                // 重新加载通信机列表以更新状态显示
-                loadCommunications();
-                console.log('定时检查通信机状态完成');
-            } catch (e) {
-                console.error('定时检查通信机状态失败:', e);
-            }
-        }
-        
-        function openSSHKeyModal() {
-            document.getElementById('sshKeyModal').classList.add('active');
-        }
-        
-        document.getElementById('sshKeyForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = {
-                name: document.getElementById('sshKeyName').value,
-                key_type: document.getElementById('sshKeyType').value,
-                key_size: parseInt(document.getElementById('sshKeySize').value),
-                passphrase: document.getElementById('sshKeyPassphrase').value || null,
-                description: document.getElementById('sshKeyDesc').value || null
-            };
-            const res = await fetch(`${API_BASE}/api/v1/keys/generate`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            const result = await res.json();
-            if (res.ok) {
-                alert('✅ 密钥生成成功！\n公钥: ' + result.public_key);
-                closeModal('sshKeyModal');
-                loadSSHKeys();
-            } else {
-                alert('❌ 生成失败: ' + result.detail);
-            }
-        });
-        
-        async function deleteSSHKey(id) {
-            if (!confirm('确定删除?')) return;
-            await fetch(`${API_BASE}/api/v1/keys/${id}`, { method: 'DELETE', headers: getHeaders() });
-            loadSSHKeys();
-        }
-        
-        function openGroupModal() {
-            document.getElementById('groupModal').classList.add('active');
-        }
-        
-        document.getElementById('groupForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = {
-                name: document.getElementById('groupName').value,
-                description: document.getElementById('groupDesc').value || null
-            };
-            await fetch(`${API_BASE}/api/v1/communications/groups`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            closeModal('groupModal');
-            loadGroups();
-            loadGroupOptions();
-        });
-        
-        document.getElementById('checkItemForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('checkItemId').value;
-            
-            // 获取所有选中的检查类型
-            const selectedTypes = Array.from(document.querySelectorAll('input[name="checkItemType"]:checked')).map(cb => cb.value);
-            
-            // 根据选中的检查类型生成属性
-            let check_attributes = {};
-            if (selectedTypes.includes('file_permissions')) {
-                check_attributes.permissions = document.getElementById('filePermissionsValue').value;
-            }
-            if (selectedTypes.includes('file_owner')) {
-                check_attributes.owner = document.getElementById('fileOwnerValue').value;
-            }
-            if (selectedTypes.includes('file_size')) {
-                check_attributes.size = {
-                    value: parseInt(document.getElementById('fileSizeValue').value),
-                    unit: document.getElementById('fileSizeUnit').value
-                };
-            }
-            if (selectedTypes.includes('file_mtime')) {
-                check_attributes.mtime = document.getElementById('fileMtimeValue').value;
-            }
-            if (selectedTypes.includes('file_content')) {
-                check_attributes.pattern = document.getElementById('fileContentPattern').value;
-            }
-            if (selectedTypes.includes('filesystem')) {
-                check_attributes.mount_point = document.getElementById('filesystemMountPoint').value || '/';
-            }
-            if (selectedTypes.includes('network')) {
-                check_attributes.port = parseInt(document.getElementById('networkPort').value) || 80;
-            }
-            if (selectedTypes.includes('service')) {
-                check_attributes.service_name = document.getElementById('serviceName').value;
-            }
-            if (selectedTypes.includes('log')) {
-                check_attributes.pattern = document.getElementById('logPattern').value;
-            }
-            if (selectedTypes.includes('process')) {
-                check_attributes.process_name = document.getElementById('processName').value;
-            }
-            
-            const data = {
-                name: document.getElementById('checkItemName').value,
-                type: selectedTypes,
-                target_path: document.getElementById('checkItemTarget').value || null,
-                check_attributes: check_attributes,
-                description: document.getElementById('checkItemDesc').value || null
-            };
-            const url = id ? `${API_BASE}/api/v1/check-items/${id}` : `${API_BASE}/api/v1/check-items`;
-            const method = id ? 'PUT' : 'POST';
-            
-            try {
-                const response = await fetch(url, { method, headers: getHeaders(), body: JSON.stringify(data) });
-                if (!response.ok) {
-                    throw new Error('创建检查项失败');
-                }
-                
-                if (!id && currentCheckItemListId) {
-                    // 新建检查项，需要添加到当前选中的检查项列表中
-                    const newItem = await response.json();
-                    
-                    // 获取当前检查项列表
-                    const listResponse = await fetch(`${API_BASE}/api/v1/check-items/lists/${currentCheckItemListId}`, { headers: getHeaders() });
-                    const listData = await listResponse.json();
-                    
-                    // 获取现有检查项 ID 列表
-                    const existingItemIds = listData.items ? listData.items.map(item => item.id) : [];
-                    
-                    // 添加新检查项 ID
-                    const updatedItemIds = [...existingItemIds, newItem.id];
-                    
-                    // 更新检查项列表
-                    await fetch(`${API_BASE}/api/v1/check-items/lists/${currentCheckItemListId}`, {
-                        method: 'PUT',
-                        headers: getHeaders(),
-                        body: JSON.stringify({ item_ids: updatedItemIds })
-                    });
-                }
-                
-                closeModal('checkItemModal');
-                loadCheckItems();
-            } catch (e) {
-                console.error(e);
-                alert('❌ 保存检查项失败，请重试');
-            }
-        });
-        
-        document.getElementById('checkItemListForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('checkItemListId').value;
-            
-            const data = {
-                name: document.getElementById('checkItemListName').value,
-                description: document.getElementById('checkItemListDesc').value || null
-            };
-            
-            const url = id ? `${API_BASE}/api/v1/check-items/lists/${id}` : `${API_BASE}/api/v1/check-items/lists`;
-            const method = id ? 'PUT' : 'POST';
-            
-            try {
-                const response = await fetch(url, { method, headers: getHeaders(), body: JSON.stringify(data) });
-                if (!response.ok) {
-                    const error = await response.json();
-                    if (response.status === 400 && error.detail && error.detail.includes('名称已存在')) {
-                        alert('❌ 检查项列表名称已存在，请使用其他名称');
-                    } else if (response.status === 422) {
-                        alert('❌ 输入数据有误，请检查后重试');
-                    } else {
-                        alert('❌ 创建失败: ' + (error.detail || '未知错误'));
-                    }
-                    return;
-                }
-                closeModal('checkItemListModal');
-                loadCheckItemLists();
-            } catch (e) {
-                console.error(e);
-                alert('❌ 网络错误，请稍后重试');
-            }
-        });
-        
-        document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = {
-                name: document.getElementById('snapshotName').value,
-                group_id: parseInt(document.getElementById('snapshotGroup').value),
-                is_default: document.getElementById('snapshotDefault').checked,
-                description: document.getElementById('snapshotDesc').value || null
-            };
-            await fetch(`${API_BASE}/api/v1/snapshots`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            closeModal('snapshotModal');
-            loadSnapshots();
-        });
-        
-        document.getElementById('checkForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const ruleId = document.getElementById('checkRule').value;
-            const commId = document.getElementById('checkCommunication').value;
-            if (!ruleId || !commId) {
-                alert('请选择检查规则和通信机');
-                return;
-            }
-            const data = {
-                rule_id: parseInt(ruleId),
-                communication_id: parseInt(commId)
-            };
-            await fetch(`${API_BASE}/api/v1/checks`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            closeModal('checkModal');
-            loadCheckResults();
-        });
-        
-        function openCheckItemModal() {
-            if (!currentCheckItemListId) {
-                alert('请先选择一个检查项列表');
-                return;
-            }
-            document.getElementById('checkItemId').value = '';
-            document.getElementById('checkItemName').value = '';
-            document.getElementById('checkItemTarget').value = '';
-            document.getElementById('checkItemDesc').value = '';
-            
-            // 重置所有检查类型复选框
-            document.querySelectorAll('input[name="checkItemType"]').forEach(cb => {
-                cb.checked = false;
-            });
-            
-            toggleCheckItemFields();
-            document.getElementById('checkItemModalTitle').textContent = '添加检查项';
-            document.getElementById('checkItemModal')?.classList.add('active');
-        }
-        
-        async function editCheckItem(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
-                const item = await res.json();
-                
-                // 打开模态框并预填信息
-                document.getElementById('checkItemId').value = id;
-                document.getElementById('checkItemName').value = item.name;
-                document.getElementById('checkItemTarget').value = item.target_path || '';
-                document.getElementById('checkItemDesc').value = item.description || '';
-                
-                // 重置所有检查类型复选框
-                document.querySelectorAll('input[name="checkItemType"]').forEach(cb => {
-                    cb.checked = false;
-                });
-                
-                // 选中对应检查类型
-                const types = Array.isArray(item.type) ? item.type : [item.type];
-                types.forEach(type => {
-                    const checkbox = document.querySelector(`input[name="checkItemType"][value="${type}"]`);
-                    if (checkbox) checkbox.checked = true;
-                });
-                
-                // 显示对应字段
-                toggleCheckItemFields();
-                
-                // 填充具体字段值
-                if (item.check_attributes) {
-                    if (types.includes('file_permissions')) {
-                        document.getElementById('filePermissionsValue').value = item.check_attributes.permissions || '';
-                    }
-                    if (types.includes('file_owner')) {
-                        document.getElementById('fileOwnerValue').value = item.check_attributes.owner || '';
-                    }
-                    if (types.includes('file_size')) {
-                        document.getElementById('fileSizeValue').value = item.check_attributes.size?.value || '';
-                        if (item.check_attributes.size?.unit) {
-                            document.getElementById('fileSizeUnit').value = item.check_attributes.size.unit;
-                        }
-                    }
-                    if (types.includes('file_mtime')) {
-                        document.getElementById('fileMtimeValue').value = item.check_attributes.mtime || '';
-                    }
-                    if (types.includes('file_content')) {
-                        document.getElementById('fileContentPattern').value = item.check_attributes.pattern || '';
-                    }
-                    if (types.includes('filesystem')) {
-                        document.getElementById('filesystemMountPoint').value = item.check_attributes.mount_point || '/';
-                    }
-                    if (types.includes('network')) {
-                        document.getElementById('networkPort').value = item.check_attributes.port || 80;
-                    }
-                    if (types.includes('service')) {
-                        document.getElementById('serviceName').value = item.check_attributes.service_name || '';
-                    }
-                    if (types.includes('log')) {
-                        document.getElementById('logPattern').value = item.check_attributes.pattern || '';
-                    }
-                    if (types.includes('process')) {
-                        document.getElementById('processName').value = item.check_attributes.process_name || '';
-                    }
-                }
-                
-                document.getElementById('checkItemModalTitle').textContent = '编辑检查项';
-                document.getElementById('checkItemModal').classList.add('active');
-            } catch (e) {
-                console.error(e);
-                alert('❌ 编辑异常');
-            }
-        }
-        
-        async function cloneCheckItem(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
-                const item = await res.json();
-                
-                // 打开模态框并预填信息
-                document.getElementById('checkItemId').value = '';
-                document.getElementById('checkItemName').value = `${item.name} (复制)`;
-                document.getElementById('checkItemTarget').value = item.target_path || '';
-                document.getElementById('checkItemDesc').value = item.description || '';
-                
-                // 重置所有检查类型复选框
-                document.querySelectorAll('input[name="checkItemType"]').forEach(cb => {
-                    cb.checked = false;
-                });
-                
-                // 选中对应检查类型
-                const types = Array.isArray(item.type) ? item.type : [item.type];
-                types.forEach(type => {
-                    const checkbox = document.querySelector(`input[name="checkItemType"][value="${type}"]`);
-                    if (checkbox) checkbox.checked = true;
-                });
-                
-                // 显示对应字段
-                toggleCheckItemFields();
-                
-                // 填充具体字段值
-                if (item.check_attributes) {
-                    if (types.includes('file_permissions')) {
-                        document.getElementById('filePermissionsValue').value = item.check_attributes.permissions || '';
-                    }
-                    if (types.includes('file_owner')) {
-                        document.getElementById('fileOwnerValue').value = item.check_attributes.owner || '';
-                    }
-                    if (types.includes('file_size')) {
-                        document.getElementById('fileSizeValue').value = item.check_attributes.size?.value || '';
-                        if (item.check_attributes.size?.unit) {
-                            document.getElementById('fileSizeUnit').value = item.check_attributes.size.unit;
-                        }
-                    }
-                    if (types.includes('file_mtime')) {
-                        document.getElementById('fileMtimeValue').value = item.check_attributes.mtime || '';
-                    }
-                    if (types.includes('file_content')) {
-                        document.getElementById('fileContentPattern').value = item.check_attributes.pattern || '';
-                    }
-                    if (types.includes('filesystem')) {
-                        document.getElementById('filesystemMountPoint').value = item.check_attributes.mount_point || '/';
-                    }
-                    if (types.includes('network')) {
-                        document.getElementById('networkPort').value = item.check_attributes.port || 80;
-                    }
-                    if (types.includes('service')) {
-                        document.getElementById('serviceName').value = item.check_attributes.service_name || '';
-                    }
-                    if (types.includes('log')) {
-                        document.getElementById('logPattern').value = item.check_attributes.pattern || '';
-                    }
-                    if (types.includes('process')) {
-                        document.getElementById('processName').value = item.check_attributes.process_name || '';
-                    }
-                }
-                
-                document.getElementById('checkItemModalTitle').textContent = '克隆检查项';
-                document.getElementById('checkItemModal').classList.add('active');
-            } catch (e) {
-                console.error(e);
-                alert('❌ 克隆异常');
-            }
-        }
-        
-        async function deleteCheckItem(id) {
-            if (!confirm('确定删除?')) return;
-            await fetch(`${API_BASE}/api/v1/check-items/${id}`, { method: 'DELETE', headers: getHeaders() });
-            loadCheckItems();
-        }
-        
-        async function deleteSnapshot(id) {
-            if (!confirm('确定删除?')) return;
-            await fetch(`${API_BASE}/api/v1/snapshots/${id}`, { method: 'DELETE', headers: getHeaders() });
-            loadSnapshots();
-        }
-        
-        function openSnapshotModal() {
-            loadSnapshotGroupsForModal();
-            document.getElementById('snapshotModal')?.classList.add('active');
-        }
-        
-        async function loadSnapshotGroupsForModal() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/snapshots/groups`, { headers: getHeaders() });
-                const groups = await res.json();
-                document.getElementById('snapshotGroup').innerHTML = groups.map(g => 
-                    `<option value="${g.id}">${g.name}</option>`
-                ).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function openCheckModal() {
-            loadRulesAndCommsForModal();
-            document.getElementById('checkModal')?.classList.add('active');
-        }
-        
-        async function loadRulesAndCommsForModal() {
-            try {
-                const [rulesRes, commsRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/v1/check-rules`, { headers: getHeaders() }),
-                    fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() })
-                ]);
-                const rules = await rulesRes.json();
-                const comms = await commsRes.json();
-                
-                document.getElementById('checkRule').innerHTML = '<option value="">请选择规则</option>' + 
-                    rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
-                document.getElementById('checkCommunication').innerHTML = '<option value="">请选择通信机</option>' + 
-                    comms.map(c => `<option value="${c.id}">${c.name} (${c.ip_address})</option>`).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function viewCheckResult(id) {
-            fetch(`${API_BASE}/api/v1/checks/${id}`, { headers: getHeaders() })
-                .then(r => r.json())
-                .then(data => alert(JSON.stringify(data, null, 2)));
-        }
-        
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
-        }
-        
-        refreshData();
-    </script>
+    <script src="/static/js/shared.js"></script>
+    <script src="/static/js/communications.js"></script>
+    <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/checks.js"></script>
+    <script src="/static/js/reports.js"></script>
 </body>
 </html>
