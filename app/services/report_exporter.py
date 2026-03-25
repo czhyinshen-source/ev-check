@@ -11,6 +11,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+import openpyxl.cell.cell
 
 
 class ReportExporter:
@@ -66,7 +67,7 @@ class PDFExporter(ReportExporter):
             table_data = [["检查项ID", "状态", "期望值", "实际值", "消息"]]
             
             for detail in details:
-                status_map = {"success": "通过", "warning": "警告", "error": "失败"}
+                status_map = {"pass": "通过", "fail": "失败", "error": "异常"}
                 row = [
                     str(detail.get("check_item_id", "")),
                     status_map.get(detail.get("status", ""), detail.get("status", "")),
@@ -137,7 +138,7 @@ class ExcelExporter(ReportExporter):
         headers = ["检查项ID", "状态", "期望值", "实际值", "消息"]
         ws_summary.append(headers)
         
-        for cell in ws_summary[len(ws_summary)-1]:
+        for cell in ws_summary[ws_summary.max_row]:
             cell.fill = header_fill
             cell.font = header_font
             cell.border = thin_border
@@ -145,7 +146,7 @@ class ExcelExporter(ReportExporter):
         
         details = data.get("details", [])
         for detail in details:
-            status_map = {"success": "通过", "warning": "警告", "error": "失败"}
+            status_map = {"pass": "通过", "fail": "失败", "error": "异常"}
             row = [
                 detail.get("check_item_id", ""),
                 status_map.get(detail.get("status", ""), detail.get("status", "")),
@@ -155,21 +156,23 @@ class ExcelExporter(ReportExporter):
             ]
             ws_summary.append(row)
         
-        for row in ws_summary.iter_rows(min_row=len(ws_summary)-len(details), max_row=len(ws_summary), min_col=1, max_col=5):
+        for row in ws_summary.iter_rows(min_row=ws_summary.max_row - len(details), max_row=ws_summary.max_row, min_col=1, max_col=5):
             for cell in row:
                 cell.border = thin_border
         
-        for col in ws_summary.columns:
+        for col_idx, col in enumerate(ws_summary.columns, 1):
             max_length = 0
-            column = col[0].column_letter
+            from openpyxl.utils import get_column_letter
+            column_letter = get_column_letter(col_idx)
             for cell in col:
                 try:
-                    if len(str(cell.value)) > max_length:
-                        max_length = len(cell.value)
+                    if cell.value and not isinstance(cell, openpyxl.cell.cell.MergedCell):
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
                 except:
                     pass
             adjusted_width = min(max_length + 2, 50)
-            ws_summary.column_dimensions[column].width = adjusted_width
+            ws_summary.column_dimensions[column_letter].width = adjusted_width
         
         buffer = io.BytesIO()
         wb.save(buffer)
