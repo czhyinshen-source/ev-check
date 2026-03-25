@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "initialPermissionMode": "acceptEdits",
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "Bash",
+      "Git",
+      "Npm",
+      "Pip",
+      "Grep",
+      "Glob",
+      "WebSearch",
+      "WebFetch",
+      "mcp__chrome-devtools"
+    ],
+    "deny": [
+      "Rm",
+      "Ssh",
+      "Sudo"
+    ]
+  }
+}

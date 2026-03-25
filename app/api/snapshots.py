@@ -11,8 +11,19 @@ from app.database import get_db
 from app.models import User, SnapshotGroup, Snapshot, SnapshotInstance, EnvironmentData, Communication
 from app.models.check_item import CheckItem, CheckItemList
 from app.models.check_result import CheckRule
+from app.models.snapshot import SnapshotBuildTask
 from app.api.users import get_current_active_user
 from app.utils.ssh_client import SSHClientWrapper
+from app.schemas.snapshot_build import (
+    StartBuildRequest,
+    StartBuildResponse,
+    BuildProgressResponse,
+    GroupProgress,
+    CommunicationProgress,
+)
+from app.services.snapshot_build_service import SnapshotBuildService, SnapshotBuildError
+from app.services.snapshot_progress import get_snapshot_progress_tracker
+from app.tasks.snapshot_build_tasks import execute_snapshot_build_task
 
 router = APIRouter()
 
@@ -445,3 +456,105 @@ async def delete_snapshot_instance(
     
     await db.delete(instance)
     await db.commit()
+
+
+# ========== 快照构建 API ==========
+
+
+@router.post("/build/start", response_model=StartBuildResponse, status_code=status.HTTP_201_CREATED)
+async def start_snapshot_build(
+    request: StartBuildRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """启动快照构建"""
+    service = SnapshotBuildService(db)
+
+    try:
+        task = await service.start_build(
+            snapshot_name=request.snapshot_name,
+            snapshot_group_id=request.snapshot_group_id,
+            build_config=[c.model_dump() for c in request.build_config],
+        )
+
+        # 触发 Celery 任务
+        execute_snapshot_build_task.delay(task_id=task.id)
+
+        return StartBuildResponse(
+            task_id=task.id,
+            snapshot_id=task.snapshot_id,
+            snapshot_name=task.snapshot.name,
+            status=task.status,
+            message="构建任务已创建",
+        )
+
+    except SnapshotBuildError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/build/{task_id}/progress", response_model=BuildProgressResponse)
+async def get_build_progress(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取构建进度"""
+    # 从数据库获取基本信息
+    result = await db.execute(
+        select(SnapshotBuildTask).where(SnapshotBuildTask.id == task_id)
+    )
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(status_code=404, detail="构建任务不存在")
+
+    # 从 Redis 获取详细进度
+    tracker = get_snapshot_progress_tracker()
+    progress = await tracker.get_progress(task_id)
+
+    # 构建响应
+    groups_progress = []
+    if progress and "groups_progress" in progress:
+        for g in progress["groups_progress"]:
+            comms = [
+                CommunicationProgress(**c)
+                for c in g.get("communications", [])
+            ]
+            groups_progress.append(GroupProgress(
+                group_id=g["group_id"],
+                group_name=g.get("group_name", ""),
+                status=g.get("status", "pending"),
+                progress=g.get("progress", 0),
+                communications=comms,
+            ))
+
+    return BuildProgressResponse(
+        id=task.id,
+        snapshot_id=task.snapshot_id,
+        status=task.status,
+        progress=task.progress,
+        total_groups=task.total_groups,
+        completed_groups=task.completed_groups,
+        total_communications=task.total_communications,
+        completed_communications=task.completed_communications,
+        current_communication=task.current_communication,
+        groups_progress=groups_progress,
+        error_message=task.error_message,
+    )
+
+
+@router.delete("/build/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_snapshot_build(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """取消快照构建"""
+    service = SnapshotBuildService(db)
+    cancelled = await service.cancel_build(task_id)
+
+    if not cancelled:
+        raise HTTPException(
+            status_code=400,
+            detail="无法取消构建任务（任务可能已结束）"
+        )

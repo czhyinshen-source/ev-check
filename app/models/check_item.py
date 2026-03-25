@@ -14,13 +14,25 @@ class CheckItem(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
-    type: Mapped[Optional[Union[str, list]]] = mapped_column(String(500), nullable=True)
+    type: Mapped[Optional[Union[str, list]]] = mapped_column(JSON, nullable=True)
     target_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     check_attributes: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 所属检查项列表（一对多关系）
+    list_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("check_item_lists.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    # 列表内序号
+    order_index: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # 关系
+    check_item_list: Mapped[Optional["CheckItemList"]] = relationship(
+        "CheckItemList",
+        back_populates="items"
+    )
     environment_data: Mapped[list["EnvironmentData"]] = relationship(
         "EnvironmentData",
         back_populates="check_item",
@@ -43,10 +55,12 @@ class CheckItemList(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    # 一对多关系：一个列表包含多个检查项
     items: Mapped[list["CheckItem"]] = relationship(
         "CheckItem",
-        secondary="check_item_list_items",
-        back_populates="check_item_lists"
+        back_populates="check_item_list",
+        cascade="all, delete-orphan",
+        order_by="CheckItem.order_index"
     )
     snapshot_groups: Mapped[list["SnapshotGroup"]] = relationship(
         "SnapshotGroup",
@@ -58,24 +72,3 @@ class CheckItemList(Base):
         back_populates="check_item_list",
         cascade="all, delete-orphan"
     )
-
-
-class CheckItemListItem(Base):
-    """检查项列表关联表"""
-    __tablename__ = "check_item_list_items"
-
-    list_id: Mapped[int] = mapped_column(
-        ForeignKey("check_item_lists.id", ondelete="CASCADE"),
-        primary_key=True
-    )
-    item_id: Mapped[int] = mapped_column(
-        ForeignKey("check_items.id", ondelete="CASCADE"),
-        primary_key=True
-    )
-
-
-CheckItem.check_item_lists = relationship(
-    "CheckItemList",
-    secondary="check_item_list_items",
-    back_populates="items"
-)

@@ -41,7 +41,17 @@ app.include_router(ssh_keys.router, prefix="/api/v1", tags=["SSH 密钥管理"])
 app.include_router(check_rules.router, prefix="/api/v1", tags=["检查规则管理"])
 app.include_router(config.router, prefix="/api/v1", tags=["配置管理"])
 
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
+# 自定义静态文件处理器，添加禁用缓存头
+class NoCacheStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
+app.mount("/static", NoCacheStaticFiles(directory="app/static"), name="static")
 
 
 @app.get("/")
@@ -59,13 +69,23 @@ async def login():
 @app.get("/dashboard")
 async def dashboard():
     """控制台页面"""
-    return FileResponse("app/static/dashboard.html")
+    from fastapi.responses import FileResponse
+    response = FileResponse("app/static/dashboard.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/dashboard.html")
 async def dashboard_html():
     """控制台页面html"""
-    return FileResponse("app/static/dashboard.html")
+    from fastapi.responses import FileResponse
+    response = FileResponse("app/static/dashboard.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.get("/health")

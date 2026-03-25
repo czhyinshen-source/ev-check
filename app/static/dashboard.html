@@ -516,11 +516,11 @@
                 <div class="sidebar">
                     <div class="sidebar-header">
                         <h3>检查项列表管理</h3>
-                        <button class="btn btn-primary btn-sm" onclick="openCheckItemListModal()">+ 新建列表</button>
+                        <button class="btn btn-primary btn-sm" onclick="window.checkitems.openCheckItemListModal()">+ 新建列表</button>
                     </div>
                     <ul class="group-tree" id="checkItemListTree">
                         <li>
-                            <div class="group-item active" data-list-id="" onclick="selectCheckItemList('')">
+                            <div class="group-item active" data-list-id="" onclick="window.checkitems.selectCheckItemList('')">
                                 <span class="icon">📁</span>
                                 <span>全部检查项</span>
                             </div>
@@ -533,8 +533,8 @@
                         <div class="section-header">
                             <h2 id="currentCheckItemListName">检查项管理</h2>
                             <div class="action-bar">
-                                <button class="btn btn-primary" onclick="openCheckItemModal()">+ 新增检查项</button>
-                                <button class="btn btn-success" onclick="loadCheckItems()">刷新</button>
+                                <button class="btn btn-primary" onclick="window.checkitems.openCheckItemModal()">+ 新增检查项</button>
+                                <button class="btn btn-success" onclick="window.checkitems.loadCheckItems()">刷新</button>
                             </div>
                         </div>
                         <table>
@@ -915,7 +915,7 @@
                 <!-- 检查项分类选择 -->
                 <div class="form-group">
                     <label>检查项分类 *</label>
-                    <select id="checkItemCategory" onchange="toggleCheckItemCategory()">
+                    <select id="checkItemCategory" onchange="window.checkitems.toggleCheckItemCategory()">
                         <option value="">请选择检查项分类</option>
                         <option value="file">文件/目录检查</option>
                         <option value="content">文件内容检查</option>
@@ -942,14 +942,14 @@
                     <!-- 文件时间检查 -->
                     <div class="attr-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="checkFileMtime" onchange="toggleCheckItemFields()">
+                            <input type="checkbox" id="checkFileMtime" onchange="window.checkitems.toggleCheckItemFields()">
                             <span>修改时间</span>
                         </label>
                         <div class="attr-fields" id="fileMtimeFields" style="display:none;">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>比较基准</label>
-                                    <select id="fileMtimeCompareMode" onchange="toggleCheckItemFields()">
+                                    <select id="fileMtimeCompareMode" onchange="window.checkitems.toggleCheckItemFields()">
                                         <option value="snapshot">与快照比较</option>
                                         <option value="specified">指定时间范围</option>
                                     </select>
@@ -971,14 +971,14 @@
                     <!-- 文件大小检查 -->
                     <div class="attr-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="checkFileSize" onchange="toggleCheckItemFields()">
+                            <input type="checkbox" id="checkFileSize" onchange="window.checkitems.toggleCheckItemFields()">
                             <span>文件大小</span>
                         </label>
                         <div class="attr-fields" id="fileSizeFields" style="display:none;">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>比较基准</label>
-                                    <select id="fileSizeCompareMode" onchange="toggleCheckItemFields()">
+                                    <select id="fileSizeCompareMode" onchange="window.checkitems.toggleCheckItemFields()">
                                         <option value="snapshot">与快照比较</option>
                                         <option value="specified">指定大小范围</option>
                                     </select>
@@ -1000,14 +1000,14 @@
                     <!-- 属主检查 -->
                     <div class="attr-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="checkFileOwner" onchange="toggleCheckItemFields()">
+                            <input type="checkbox" id="checkFileOwner" onchange="window.checkitems.toggleCheckItemFields()">
                             <span>属主</span>
                         </label>
                         <div class="attr-fields" id="fileOwnerFields" style="display:none;">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>比较基准</label>
-                                    <select id="fileOwnerCompareMode" onchange="toggleCheckItemFields()">
+                                    <select id="fileOwnerCompareMode" onchange="window.checkitems.toggleCheckItemFields()">
                                         <option value="snapshot">与快照比较</option>
                                         <option value="specified">指定用户</option>
                                     </select>
@@ -1022,14 +1022,14 @@
                     <!-- 属组检查 -->
                     <div class="attr-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="checkFileGroup" onchange="toggleCheckItemFields()">
+                            <input type="checkbox" id="checkFileGroup" onchange="window.checkitems.toggleCheckItemFields()">
                             <span>属组</span>
                         </label>
                         <div class="attr-fields" id="fileGroupFields" style="display:none;">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>比较基准</label>
-                                    <select id="fileGroupCompareMode" onchange="toggleCheckItemFields()">
+                                    <select id="fileGroupCompareMode" onchange="window.checkitems.toggleCheckItemFields()">
                                         <option value="snapshot">与快照比较</option>
                                         <option value="specified">指定组</option>
                                     </select>
@@ -1044,14 +1044,14 @@
                     <!-- 权限检查 -->
                     <div class="attr-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="checkFilePermissions" onchange="toggleCheckItemFields()">
+                            <input type="checkbox" id="checkFilePermissions" onchange="window.checkitems.toggleCheckItemFields()">
                             <span>文件权限</span>
                         </label>
                         <div class="attr-fields" id="filePermissionsFields" style="display:none;">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>比较基准</label>
-                                    <select id="filePermissionsCompareMode" onchange="toggleCheckItemFields()">
+                                    <select id="filePermissionsCompareMode" onchange="window.checkitems.toggleCheckItemFields()">
                                         <option value="snapshot">与快照比较</option>
                                         <option value="specified">指定权限</option>
                                     </select>
@@ -1066,14 +1066,14 @@
                     <!-- MD5检查 -->
                     <div class="attr-group">
                         <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                            <input type="checkbox" id="checkFileMd5" onchange="toggleCheckItemFields()">
+                            <input type="checkbox" id="checkFileMd5" onchange="window.checkitems.toggleCheckItemFields()">
                             <span>MD5码</span>
                         </label>
                         <div class="attr-fields" id="fileMd5Fields" style="display:none;">
                             <div class="form-row">
                                 <div class="form-group">
                                     <label>比较基准</label>
-                                    <select id="fileMd5CompareMode" onchange="toggleCheckItemFields()">
+                                    <select id="fileMd5CompareMode" onchange="window.checkitems.toggleCheckItemFields()">
                                         <option value="snapshot">与快照比较</option>
                                         <option value="specified">指定MD5值</option>
                                     </select>
@@ -1095,7 +1095,7 @@
 
                     <div class="form-group">
                         <label>文件类型 *</label>
-                        <select id="contentFileType" onchange="toggleContentCheckFields()">
+                        <select id="contentFileType" onchange="window.checkitems.toggleContentCheckFields()">
                             <option value="text">普通文本文件</option>
                             <option value="kernel">内核参数文件</option>
                         </select>
@@ -1105,7 +1105,7 @@
                     <div id="textFileFields">
                         <div class="form-group">
                             <label>比较模式</label>
-                            <select id="textCompareMode" onchange="toggleTextCompareFields()">
+                            <select id="textCompareMode" onchange="window.checkitems.toggleTextCompareFields()">
                                 <option value="full">完整内容比较</option>
                                 <option value="partial">部分内容比较</option>
                                 <option value="contains">包含指定文本</option>
@@ -1122,7 +1122,7 @@
                     <div id="kernelFileFields" style="display:none;">
                         <div class="form-group">
                             <label>比较模式</label>
-                            <select id="kernelCompareMode" onchange="toggleKernelCompareFields()">
+                            <select id="kernelCompareMode" onchange="window.checkitems.toggleKernelCompareFields()">
                                 <option value="snapshot">与快照比较</option>
                                 <option value="specified">指定参数值</option>
                             </select>
@@ -1138,7 +1138,7 @@
                 <div id="routeCheckFields" style="display:none;">
                     <div class="form-group">
                         <label>路由表模式 *</label>
-                        <select id="routeTableMode" onchange="toggleRouteCheckFields()">
+                        <select id="routeTableMode" onchange="window.checkitems.toggleRouteCheckFields()">
                             <option value="full">采集当前系统的全量路由表信息</option>
                             <option value="check">检查是否包含指定的路由规则</option>
                         </select>

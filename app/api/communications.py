@@ -144,8 +144,7 @@ async def create_communication(
     await db.refresh(db_comm)
     return {
         "id": db_comm.id, 
-        "name": db_comm.name,
-        "connection_status": db_comm.connection_status
+        "name": db_comm.name
     }
 
 

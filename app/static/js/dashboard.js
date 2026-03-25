@@ -205,324 +205,6 @@
 
         // loadGroupOptions, loadSSHKeysForSelect, toggleAuthFields 在 communications.js 中定义
 
-        // 检查项分类切换
-        function toggleCheckItemCategory() {
-            const category = document.getElementById('checkItemCategory').value;
-
-            // 隐藏所有检查类型字段
-            document.getElementById('fileCheckFields').style.display = 'none';
-            document.getElementById('contentCheckFields').style.display = 'none';
-            document.getElementById('routeCheckFields').style.display = 'none';
-
-            // 显示对应分类的字段
-            if (category === 'file') {
-                document.getElementById('fileCheckFields').style.display = 'block';
-            } else if (category === 'content') {
-                document.getElementById('contentCheckFields').style.display = 'block';
-            } else if (category === 'route') {
-                document.getElementById('routeCheckFields').style.display = 'block';
-            }
-        }
-
-        // 文件/目录检查 - 各个属性的显示切换
-        function toggleCheckItemFields() {
-            // 修改时间
-            document.getElementById('fileMtimeFields').style.display =
-                document.getElementById('checkFileMtime').checked ? 'block' : 'none';
-            // 大小
-            document.getElementById('fileSizeFields').style.display =
-                document.getElementById('checkFileSize').checked ? 'block' : 'none';
-            // 属主
-            document.getElementById('fileOwnerFields').style.display =
-                document.getElementById('checkFileOwner').checked ? 'block' : 'none';
-            // 属组
-            document.getElementById('fileGroupFields').style.display =
-                document.getElementById('checkFileGroup').checked ? 'block' : 'none';
-            // 权限
-            document.getElementById('filePermissionsFields').style.display =
-                document.getElementById('checkFilePermissions').checked ? 'block' : 'none';
-            // MD5
-            document.getElementById('fileMd5Fields').style.display =
-                document.getElementById('checkFileMd5').checked ? 'block' : 'none';
-
-            // 时间比较 - 显示范围设置
-            const mtimeCompareMode = document.getElementById('fileMtimeCompareMode').value;
-            document.getElementById('fileMtimeRangeFields').style.display =
-                mtimeCompareMode === 'specified' ? 'flex' : 'none';
-
-            // 大小比较 - 显示范围设置
-            const sizeCompareMode = document.getElementById('fileSizeCompareMode').value;
-            document.getElementById('fileSizeRangeFields').style.display =
-                sizeCompareMode === 'specified' ? 'flex' : 'none';
-
-            // 属主比较 - 显示指定值
-            const ownerCompareMode = document.getElementById('fileOwnerCompareMode').value;
-            document.getElementById('fileOwnerSpecifiedField').style.display =
-                ownerCompareMode === 'specified' ? 'block' : 'none';
-
-            // 属组比较 - 显示指定值
-            const groupCompareMode = document.getElementById('fileGroupCompareMode').value;
-            document.getElementById('fileGroupSpecifiedField').style.display =
-                groupCompareMode === 'specified' ? 'block' : 'none';
-
-            // 权限比较 - 显示指定值
-            const permCompareMode = document.getElementById('filePermissionsCompareMode').value;
-            document.getElementById('filePermissionsSpecifiedField').style.display =
-                permCompareMode === 'specified' ? 'block' : 'none';
-
-            // MD5比较 - 显示指定值
-            const md5CompareMode = document.getElementById('fileMd5CompareMode').value;
-            document.getElementById('fileMd5SpecifiedField').style.display =
-                md5CompareMode === 'specified' ? 'block' : 'none';
-        }
-
-        // 文件内容检查 - 文件类型切换
-        function toggleContentCheckFields() {
-            const fileType = document.getElementById('contentFileType').value;
-            document.getElementById('textFileFields').style.display = fileType === 'text' ? 'block' : 'none';
-            document.getElementById('kernelFileFields').style.display = fileType === 'kernel' ? 'block' : 'none';
-        }
-
-        // 文件内容检查 - 文本比较模式切换
-        function toggleTextCompareFields() {
-            const mode = document.getElementById('textCompareMode').value;
-            const showContent = mode === 'partial' || mode === 'contains' || mode === 'not_contains';
-            document.getElementById('textContentField').style.display = showContent ? 'block' : 'none';
-        }
-
-        // 文件内容检查 - 内核参数比较模式切换
-        function toggleKernelCompareFields() {
-            const mode = document.getElementById('kernelCompareMode').value;
-            document.getElementById('kernelValueField').style.display = mode === 'specified' ? 'block' : 'none';
-        }
-
-        // 路由表检查 - 模式切换
-        function toggleRouteCheckFields() {
-            const mode = document.getElementById('routeTableMode').value;
-            document.getElementById('routeRuleField').style.display = mode === 'check' ? 'block' : 'none';
-        }
-
-        // 为比较模式下拉框添加事件监听
-        document.addEventListener('DOMContentLoaded', function() {
-            // 时间比较模式
-            document.getElementById('fileMtimeCompareMode')?.addEventListener('change', toggleCheckItemFields);
-            // 大小比较模式
-            document.getElementById('fileSizeCompareMode')?.addEventListener('change', toggleCheckItemFields);
-            // 属主比较模式
-            document.getElementById('fileOwnerCompareMode')?.addEventListener('change', toggleCheckItemFields);
-            // 属组比较模式
-            document.getElementById('fileGroupCompareMode')?.addEventListener('change', toggleCheckItemFields);
-            // 权限比较模式
-            document.getElementById('filePermissionsCompareMode')?.addEventListener('change', toggleCheckItemFields);
-            // MD5比较模式
-            document.getElementById('fileMd5CompareMode')?.addEventListener('change', toggleCheckItemFields);
-        });
-        
-        async function loadCheckItemLists() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/lists`, { headers: getHeaders() });
-                if (!res.ok) {
-                    const error = await res.json();
-                    console.error('加载检查项列表失败:', error);
-                    return;
-                }
-                const data = await res.json();
-                // 确保 lists 是数组
-                const lists = Array.isArray(data) ? data : [];
-                const tree = document.getElementById('checkItemListTree');
-                
-                // 保留默认的"全部检查项"选项
-                tree.innerHTML = `
-                    <li>
-                        <div class="group-item active" data-list-id="" onclick="selectCheckItemList('')">
-                            <span class="icon">📁</span>
-                            <span>全部检查项</span>
-                        </div>
-                    </li>
-                `;
-                
-                // 添加检查项列表
-                lists.forEach(list => {
-                    const listItem = document.createElement('li');
-                    listItem.innerHTML = `
-                        <div class="group-item" data-list-id="${list.id}" onclick="selectCheckItemList(${list.id})"><span class="icon">📋</span>
-                            <span>${list.name}</span>
-                            <div class="list-actions">
-                                <button class="btn btn-xs" onclick="editCheckItemList(${list.id}); event.stopPropagation();">✏️</button>
-                                <button class="btn btn-xs" onclick="cloneCheckItemList(${list.id}); event.stopPropagation();">📋</button>
-                                <button class="btn btn-xs" onclick="deleteCheckItemList(${list.id}); event.stopPropagation();">🗑️</button>
-                            </div>
-                        </div>
-                    `;
-                    tree.appendChild(listItem);
-                });
-            } catch (e) {
-                console.error('加载检查项列表异常:', e);
-                alert('❌ 加载检查项列表失败，请刷新页面重试');
-            }
-        }
-        
-        let currentCheckItemListId = '';
-        let currentCheckItemListName = '';
-        
-        function selectCheckItemList(listId) {
-            currentCheckItemListId = listId;
-            
-            // 更新选中状态
-            document.querySelectorAll('#checkItemListTree .group-item').forEach(item => {
-                item.classList.remove('active');
-            });
-            const activeItem = document.querySelector(`#checkItemListTree .group-item[data-list-id="${listId}"]`);
-            if (activeItem) {
-                activeItem.classList.add('active');
-                // 更新当前检查项列表名称
-                const listName = activeItem.querySelector('span:not(.icon):not(.list-actions)').textContent;
-                currentCheckItemListName = listName === '全部检查项' ? '检查项管理' : listName;
-                document.getElementById('currentCheckItemListName').textContent = currentCheckItemListName;
-            }
-            
-            // 加载对应检查项
-            loadCheckItems();
-        }
-
-        async function loadCheckItems() {
-            try {
-                let url = `${API_BASE}/api/v1/check-items`;
-                if (currentCheckItemListId) {
-                    url = `${API_BASE}/api/v1/check-items?list_id=${currentCheckItemListId}`;
-                }
-
-                const res = await fetch(url, { headers: getHeaders() });
-                const items = await res.json();
-                const tbody = document.getElementById('checkItemTable');
-
-                // 直接使用返回的数组
-                const checkItems = items;
-
-                tbody.innerHTML = checkItems.map(item => `
-                    <tr>
-                        <td>${item.order_index || item.id}</td>
-                        <td>${item.name}</td>
-                        <td>${item.type}</td>
-                        <td>${item.target_path || '-'}</td>
-                        <td>${item.list_name || (currentCheckItemListId ? currentCheckItemListName : '-')}</td>
-                        <td>${item.description || '-'}</td>
-                        <td>
-                            <button class="btn btn-primary btn-sm" onclick="editCheckItem(${item.id})">编辑</button>
-                            <button class="btn btn-primary btn-sm" onclick="cloneCheckItem(${item.id})">克隆</button>
-                            <button class="btn btn-danger btn-sm" onclick="deleteCheckItem(${item.id})">删除</button>
-                        </td>
-                    </tr>
-                `).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        function openCheckItemListModal(id = null) {
-            document.getElementById('checkItemListId').value = id || '';
-            document.getElementById('checkItemListName').value = '';
-            document.getElementById('checkItemListDesc').value = '';
-            document.getElementById('checkItemListModalTitle').textContent = id ? '编辑检查项列表' : '添加检查项列表';
-            document.getElementById('checkItemListModal').classList.add('active');
-        }
-        
-        async function loadCheckItemsForList() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items`, { headers: getHeaders() });
-                const items = await res.json();
-                const select = document.getElementById('checkItemListItems');
-                select.innerHTML = items.map(item => 
-                    `<option value="${item.id}">${item.name} (${item.type})</option>`
-                ).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-        async function editCheckItemList(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { headers: getHeaders() });
-                const list = await res.json();
-                document.getElementById('checkItemListId').value = id;
-                document.getElementById('checkItemListName').value = list.name;
-                document.getElementById('checkItemListDesc').value = list.description || '';
-                document.getElementById('checkItemListModalTitle').textContent = '编辑检查项列表';
-                document.getElementById('checkItemListModal').classList.add('active');
-            } catch (e) { console.error(e); }
-        }
-        
-        async function cloneCheckItemList(id) {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { headers: getHeaders() });
-                const list = await res.json();
-                
-                const newName = list.name + ' (复制)';
-                
-                // 调用后端复制API
-                const copyRes = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}/copy`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({ new_name: newName })
-                });
-                
-                if (copyRes.ok) {
-                    alert('✅ 检查项列表克隆成功！');
-                    loadCheckItemLists();
-                } else {
-                    const error = await copyRes.json();
-                    alert('❌ 克隆失败: ' + (error.detail || '未知错误'));
-                }
-            } catch (e) {
-                console.error(e);
-                alert('❌ 克隆异常');
-            }
-        }
-        
-        async function deleteCheckItemList(id) {
-            if (!confirm('确定删除?')) return;
-            try {
-                await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { 
-                    method: 'DELETE', 
-                    headers: getHeaders() 
-                });
-                loadCheckItemLists();
-            } catch (e) { console.error(e); }
-        }
-
-        // openCommModal, editComm, deleteComm 在 communications.js 中定义
-
-        document.getElementById('commForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('commId').value;
-            const groupIdEl = document.getElementById('commGroup');
-            const authType = document.getElementById('commAuthType').value;
-            const privateKeyEl = document.getElementById('commPrivateKey');
-
-            let privateKeyPath = null;
-            if (authType === 'key' && privateKeyEl.value) {
-                privateKeyPath = "key_" + privateKeyEl.value;
-            }
-
-            const data = {
-                name: document.getElementById('commName').value,
-                ip_address: document.getElementById('commIp').value,
-                port: parseInt(document.getElementById('commPort').value) || 22,
-                username: document.getElementById('commUsername').value || 'root',
-                group_id: groupIdEl.value ? parseInt(groupIdEl.value) : null,
-                password: authType === 'password' ? (document.getElementById('commPassword').value || null) : null,
-                private_key_path: privateKeyPath,
-                description: document.getElementById('commDesc').value || null
-            };
-
-            // 保存通信机信息
-            const url = id ? `${API_BASE}/api/v1/communications/${id}` : `${API_BASE}/api/v1/communications`;
-            const method = id ? 'PUT' : 'POST';
-            const response = await fetch(url, { method, headers: getHeaders(), body: JSON.stringify(data) });
-            const commData = await response.json();
-
-            // 如果选择了密钥认证，部署公钥
-            if (authType === 'key' && privateKeyEl.value) {
-                const deployPassword = document.getElementById('commDeployPassword').value;
-                if (!deployPassword) {
-                    alert('请输入部署公钥的密码');
-                    return;
                 }
 
                 const deployResponse = await fetch(`${API_BASE}/api/v1/deploy-ssh-key`, {
@@ -932,8 +614,6 @@
             await startCheck();
         });
         
-        function openCheckItemModal() {
-            // 不再要求必须选择检查项列表，允许在"全部检查项"视图下新建
             document.getElementById('checkItemId').value = '';
             document.getElementById('checkItemCategory').value = '';
             document.getElementById('checkItemName').value = '';
@@ -972,8 +652,6 @@
             document.getElementById('checkItemModal').classList.add('active');
         }
         
-        async function editCheckItem(id) {
-            try {
                 const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
                 const item = await res.json();
 
@@ -1089,8 +767,6 @@
             }
         }
         
-        async function cloneCheckItem(id) {
-            try {
                 const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
                 const item = await res.json();
 
@@ -1186,8 +862,6 @@
             }
         }
         
-        async function deleteCheckItem(id) {
-            if (!confirm('确定删除?')) return;
             await fetch(`${API_BASE}/api/v1/check-items/${id}`, { method: 'DELETE', headers: getHeaders() });
             loadCheckItems();
         }
@@ -1282,17 +956,7 @@
         window.openExcelImportModal = openExcelImportModal;
         window.openBatchDeployModal = openBatchDeployModal;
         window.downloadExcelTemplate = downloadExcelTemplate;
-        window.openCheckItemListModal = openCheckItemListModal;
-        window.selectCheckItemList = selectCheckItemList;
-        window.openCheckItemModal = openCheckItemModal;
-        window.loadCheckItems = loadCheckItems;
-        window.toggleCheckItemCategory = toggleCheckItemCategory;
-        window.toggleCheckItemFields = toggleCheckItemFields;
-        window.toggleContentCheckFields = toggleContentCheckFields;
-        window.toggleTextCompareFields = toggleTextCompareFields;
-        window.toggleKernelCompareFields = toggleKernelCompareFields;
-        window.toggleRouteCheckFields = toggleRouteCheckFields;
-        window.openSnapshotGroupModal = openSnapshotGroupModal;
+          window.openSnapshotGroupModal = openSnapshotGroupModal;
         window.filterBySnapshotGroup = filterBySnapshotGroup;
         window.openSnapshotModal = openSnapshotModal;
         window.loadSnapshots = loadSnapshots;

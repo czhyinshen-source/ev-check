@@ -37,6 +37,20 @@ async def list_check_rules(
     return rules
 
 
+@router.get("/scheduled-tasks", response_model=List[ScheduledTaskResponse])
+async def list_scheduled_tasks(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取定时任务列表"""
+    result = await db.execute(
+        select(ScheduledTask).offset(skip).limit(limit)
+    )
+    tasks = result.scalars().all()
+    return tasks
+
+
 @router.get("/{rule_id}", response_model=CheckRuleResponse)
 async def get_check_rule(
     rule_id: int,
@@ -136,20 +150,6 @@ async def delete_check_rule(
     await db.delete(rule)
     await db.commit()
     return {"message": "检查规则已删除"}
-
-
-@router.get("/scheduled-tasks", response_model=List[ScheduledTaskResponse])
-async def list_scheduled_tasks(
-    skip: int = 0,
-    limit: int = 100,
-    db: AsyncSession = Depends(get_db)
-):
-    """获取定时任务列表"""
-    result = await db.execute(
-        select(ScheduledTask).offset(skip).limit(limit)
-    )
-    tasks = result.scalars().all()
-    return tasks
 
 
 @router.get("/scheduled-tasks/{task_id}", response_model=ScheduledTaskResponse)

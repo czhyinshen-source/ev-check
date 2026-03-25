@@ -14,15 +14,31 @@ class SnapshotGroup(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    parent_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("snapshot_groups.id", ondelete="CASCADE"),
+        nullable=True
+    )
     check_item_list_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("check_item_lists.id", ondelete="SET NULL"),
         nullable=True
     )
     default_snapshot_id: Mapped[Optional[int]] = mapped_column(nullable=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
+    parent: Mapped[Optional["SnapshotGroup"]] = relationship(
+        "SnapshotGroup",
+        remote_side=[id],
+        back_populates="children"
+    )
+    children: Mapped[list["SnapshotGroup"]] = relationship(
+        "SnapshotGroup",
+        remote_side=[parent_id],
+        back_populates="parent",
+        cascade="all, delete-orphan"
+    )
     check_item_list: Mapped[Optional["CheckItemList"]] = relationship(
         "CheckItemList",
         back_populates="snapshot_groups"
@@ -53,6 +69,11 @@ class Snapshot(Base):
     )
     instances: Mapped[list["SnapshotInstance"]] = relationship(
         "SnapshotInstance",
+        back_populates="snapshot",
+        cascade="all, delete-orphan"
+    )
+    build_tasks: Mapped[list["SnapshotBuildTask"]] = relationship(
+        "SnapshotBuildTask",
         back_populates="snapshot",
         cascade="all, delete-orphan"
     )
@@ -120,3 +141,30 @@ from app.models.check_item import CheckItemList
 from app.models.check_result import CheckRule
 
 SnapshotGroup.check_item_list = relationship("CheckItemList", back_populates="snapshot_groups")
+
+
+class SnapshotBuildTask(Base):
+    """快照构建任务"""
+    __tablename__ = "snapshot_build_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_id: Mapped[int] = mapped_column(
+        ForeignKey("snapshots.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    progress: Mapped[int] = mapped_column(Integer, default=0)
+    total_groups: Mapped[int] = mapped_column(Integer, default=0)
+    completed_groups: Mapped[int] = mapped_column(Integer, default=0)
+    total_communications: Mapped[int] = mapped_column(Integer, default=0)
+    completed_communications: Mapped[int] = mapped_column(Integer, default=0)
+    current_communication: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    start_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    build_config: Mapped[dict] = mapped_column(JSON, default=dict)
+
+    snapshot: Mapped["Snapshot"] = relationship(
+        "Snapshot",
+        back_populates="build_tasks"
+    )
