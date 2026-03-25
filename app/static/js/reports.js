@@ -7,8 +7,8 @@ let totalItems = 0;
 let currentFilters = {};
 let allReports = [];
 
-// 初始化
-if (typeof document !== 'undefined') {
+// 初始化（仅在浏览器环境中执行）
+if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     document.addEventListener('DOMContentLoaded', function() {
         // 检查登录状态
         const token = localStorage.getItem('token');

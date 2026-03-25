@@ -207,6 +207,15 @@ async function cancelCheck(resultId) {
     }
 }
 
+// 删除检查结果
+async function deleteCheckResult(id) {
+    if (!confirm('确定删除此检查结果?')) return;
+    try {
+        await fetch(`${API_BASE}/api/v1/checks/${id}`, { method: 'DELETE', headers: getHeaders() });
+        loadCheckResults();
+    } catch (e) { console.error(e); }
+}
+
 // 查看检查结果详情
 async function viewCheckResult(id) {
     try {
@@ -396,6 +405,9 @@ window.checks = {
     loadCurrentTask,
     getStatusBadge,
     getDetailStatusBadge,
+    getStatusText,
+    getStatusClass,
+    deleteCheckResult,
     // 导出dashboard.js中的特定函数
     loadRulesAndCommsForModal
 };

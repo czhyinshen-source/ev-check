@@ -5,7 +5,10 @@ import { JSDOM } from 'jsdom';
 // Setup test environment
 beforeEach(() => {
     // Mock the global fetch function
-    global.fetch = vi.fn();
+    global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve([])
+    });
 
     // Create a DOM environment
     const dom = new JSDOM(`
@@ -57,17 +60,22 @@ describe('checks module', () => {
     let checks;
 
     beforeEach(() => {
-        // Load the checks module
-        const checksModule = require('../checks.js');
+        // Mock global dependencies needed by the checks module
+        global.API_BASE = 'http://localhost:8000';
+        global.getHeaders = () => ({
+            'Authorization': 'Bearer test-token',
+            'Content-Type': 'application/json'
+        });
 
-        // Initialize window.checks if it doesn't exist
-        if (!window.checks) {
-            window.checks = {};
-        }
+        // Load the checks module by executing it in the current context
+        const fs = require('fs');
+        const path = require('path');
+        const checksCode = fs.readFileSync(path.resolve(__dirname, '../checks.js'), 'utf8');
 
-        // Copy functions to window.checks object
-        Object.assign(window.checks, checksModule);
+        // Execute the checks module code in the current context
+        eval(checksCode);
 
+        // The functions should now be available on window.checks
         checks = window.checks;
     });
 
@@ -87,16 +95,16 @@ describe('checks module', () => {
         });
 
         test('should call load functions when opening modal', () => {
+            // Mock the load functions BEFORE calling openCheckModal
+            window.checks.loadCheckRules = vi.fn();
+            window.checks.loadCommunicationsForCheck = vi.fn();
+            window.checks.loadSnapshotsForCheck = vi.fn();
+
             document.getElementById = vi.fn().mockReturnValue({
                 classList: {
                     add: vi.fn()
                 }
             });
-
-            // Mock the load functions
-            window.checks.loadCheckRules = vi.fn();
-            window.checks.loadCommunicationsForCheck = vi.fn();
-            window.checks.loadSnapshotsForCheck = vi.fn();
 
             checks.openCheckModal();
 

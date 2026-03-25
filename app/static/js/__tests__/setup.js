@@ -1,11 +1,24 @@
 // Test setup file
 import { vi } from 'vitest';
 
-// Mock window object
-global.window = {};
+// Mock document
+global.document = {
+  addEventListener: vi.fn(),
+  getElementById: vi.fn(),
+  querySelector: vi.fn(),
+  createElement: vi.fn(),
+  body: {
+    appendChild: vi.fn(),
+    removeChild: vi.fn()
+  }
+};
 
-// Mock API_BASE
-global.API_BASE = '';
+// Mock window
+global.window = {
+  location: {
+    href: ''
+  }
+};
 
 // Mock localStorage
 global.localStorage = {
@@ -23,15 +36,13 @@ global.URL = {
   revokeObjectURL: vi.fn()
 };
 
-// Mock document
-global.document = {
-  createElement: vi.fn(),
-  getElementById: vi.fn(),
-  body: {
-    appendChild: vi.fn(),
-    removeChild: vi.fn()
-  }
-};
-
 // Mock alert
 global.alert = vi.fn();
+
+// Mock CSS classes
+Object.defineProperty(global.document, 'classList', {
+  value: {
+    add: vi.fn(),
+    remove: vi.fn()
+  }
+});
