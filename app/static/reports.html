@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查报告 - 运行环境检查系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Microsoft YaHei', Arial, Consolas, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        .header {
+            background: #1E3A8A;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header h1 { font-size: 20px; }
+        .header-right { display: flex; align-items: center; gap: 20px; }
+        .header-right span { font-size: 14px; }
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .logout-btn:hover { background: rgba(255,255,255,0.3); }
+        .container { max-width: 1400px; margin: 20px auto; padding: 0 20px; }
+
+        /* 筛选栏 */
+        .filter-bar {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: flex-end;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .filter-group label {
+            font-size: 13px;
+            color: #666;
+        }
+        .filter-group input,
+        .filter-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            min-width: 180px;
+        }
+        .filter-group input:focus,
+        .filter-group select:focus {
+            outline: none;
+            border-color: #1E3A8A;
+        }
+        .filter-btn {
+            background: #1E3A8A;
+            color: white;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .filter-btn:hover { background: #152b66; }
+        .reset-btn {
+            background: white;
+            color: #666;
+            border: 1px solid #ddd;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .reset-btn:hover { background: #f5f7fa; }
+
+        /* 报告列表 */
+        .report-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .report-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            transition: box-shadow 0.2s;
+        }
+        .report-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .report-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+        .report-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .report-status {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .report-status.success { background: #e6ffed; color: #52c41a; }
+        .report-status.failed { background: #fff2f0; color: #f5222d; }
+        .report-status.running { background: #e6f7ff; color: #1890ff; }
+        .report-status.warning { background: #fffbe6; color: #faad14; }
+
+        .report-time {
+            font-size: 13px;
+            color: #999;
+        }
+
+        .report-info {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+        .report-info span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .report-summary {
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            background: #f9fafb;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .summary-label { color: #666; font-size: 13px; }
+        .summary-value { font-weight: 600; font-size: 16px; }
+        .summary-value.pass { color: #52c41a; }
+        .summary-value.fail { color: #f5222d; }
+        .summary-value.error { color: #faad14; }
+        .summary-value.total { color: #333; }
+
+        .report-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+        .btn-primary {
+            background: #C4181F;
+            color: white;
+        }
+        .btn-primary:hover { background: #A0141A; }
+        .btn-secondary {
+            background: white;
+            color: #666;
+            border: 1px solid #ddd;
+        }
+        .btn-secondary:hover { background: #f5f7fa; }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
+        .empty-state p { font-size: 14px; }
+
+        /* 加载骨架屏 */
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: skeleton-loading 1.5s infinite;
+            border-radius: 4px;
+        }
+        @keyframes skeleton-loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .skeleton-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .skeleton-line {
+            height: 16px;
+            margin-bottom: 12px;
+        }
+        .skeleton-line.short { width: 30%; }
+        .skeleton-line.medium { width: 60%; }
+        .skeleton-line.long { width: 100%; }
+
+        /* 分页 */
+        .pagination {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .pagination button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .pagination button:hover { background: #f5f7fa; }
+        .pagination button.active {
+            background: #1E3A8A;
+            color: white;
+            border-color: #1E3A8A;
+        }
+        .pagination button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>📋 检查报告</h1>
+        <div class="header-right">
+            <span id="currentUser"></span>
+            <button class="logout-btn" onclick="logout()">退出登录</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- 筛选栏 -->
+        <div class="filter-bar">
+            <div class="filter-group">
+                <label>开始时间</label>
+                <input type="date" id="startTime">
+            </div>
+            <div class="filter-group">
+                <label>结束时间</label>
+                <input type="date" id="endTime">
+            </div>
+            <div class="filter-group">
+                <label>检查规则</label>
+                <select id="ruleFilter">
+                    <option value="">全部规则</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>状态</label>
+                <select id="statusFilter">
+                    <option value="">全部状态</option>
+                    <option value="success">成功</option>
+                    <option value="failed">失败</option>
+                    <option value="running">进行中</option>
+                    <option value="completed_with_errors">部分成功</option>
+                </select>
+            </div>
+            <div class="filter-group" style="flex-direction: row; gap: 10px; align-items: flex-end;">
+                <button class="filter-btn" onclick="applyFilters()">筛选</button>
+                <button class="reset-btn" onclick="resetFilters()">重置</button>
+            </div>
+        </div>
+
+        <!-- 报告列表 -->
+        <div id="reportList" class="report-list">
+            <!-- 骨架屏占位 -->
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-line short"></div>
+                <div class="skeleton skeleton-line medium"></div>
+                <div class="skeleton skeleton-line long"></div>
+            </div>
+            <div class="skeleton-card">
+                <div class="skeleton skeleton-line short"></div>
+                <div class="skeleton skeleton-line medium"></div>
+                <div class="skeleton skeleton-line long"></div>
+            </div>
+        </div>
+
+        <!-- 分页 -->
+        <div id="pagination" class="pagination" style="display: none;">
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/config.js"></script>
+    <script src="/static/js/reports.js"></script>
+</body>
+</html>
