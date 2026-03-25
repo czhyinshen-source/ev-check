@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查报告详情 - 运行环境检查系统</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Microsoft YaHei', Arial, Consolas, sans-serif;
+            background: #f5f7fa;
+            min-height: 100vh;
+        }
+        .header {
+            background: #1E3A8A;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header h1 { font-size: 20px; display: flex; align-items: center; gap: 10px; }
+        .header-right { display: flex; align-items: center; gap: 20px; }
+        .header-right span { font-size: 14px; }
+        .logout-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .logout-btn:hover { background: rgba(255,255,255,0.3); }
+        .back-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .back-btn:hover { background: rgba(255,255,255,0.3); }
+        .container { max-width: 1400px; margin: 20px auto; padding: 0 20px; }
+
+        /* 概览卡片 */
+        .overview-card {
+            background: white;
+            border-radius: 8px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .overview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        .overview-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #333;
+        }
+        .overview-status {
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .overview-status.success { background: #e6ffed; color: #52c41a; }
+        .overview-status.failed { background: #fff2f0; color: #f5222d; }
+        .overview-status.running { background: #e6f7ff; color: #1890ff; }
+        .overview-status.warning { background: #fffbe6; color: #faad14; }
+
+        .overview-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .info-label { font-size: 12px; color: #999; }
+        .info-value { font-size: 14px; color: #333; font-weight: 500; }
+
+        /* 汇总统计 */
+        .summary-cards {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .summary-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .summary-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .summary-card.active { border: 2px solid #1E3A8A; }
+        .summary-card .value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .summary-card .label { font-size: 13px; color: #666; }
+        .summary-card .value.total { color: #333; }
+        .summary-card .value.pass { color: #52c41a; }
+        .summary-card .value.fail { color: #f5222d; }
+        .summary-card .value.error { color: #faad14; }
+
+        /* 工具栏 */
+        .toolbar {
+            background: white;
+            border-radius: 8px;
+            padding: 15px 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .toolbar-left {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .toolbar-right {
+            display: flex;
+            gap: 10px;
+        }
+        .filter-select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .filter-select:focus { outline: none; border-color: #1E3A8A; }
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            transition: background 0.2s;
+        }
+        .btn-primary { background: #C4181F; color: white; }
+        .btn-primary:hover { background: #A0141A; }
+        .btn-secondary { background: white; color: #666; border: 1px solid #ddd; }
+        .btn-secondary:hover { background: #f5f7fa; }
+
+        /* 检查项分组 */
+        .check-group {
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            overflow: hidden;
+        }
+        .check-group-header {
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .check-group-header:hover { background: #f9fafb; }
+        .check-group-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 15px;
+            font-weight: 500;
+        }
+        .check-group-title .icon { font-size: 16px; transition: transform 0.2s; }
+        .check-group.expanded .check-group-title .icon { transform: rotate(90deg); }
+        .check-group-summary {
+            display: flex;
+            gap: 15px;
+            font-size: 13px;
+        }
+        .check-group-summary .pass { color: #52c41a; }
+        .check-group-summary .fail { color: #f5222d; }
+        .check-group-summary .error { color: #faad14; }
+
+        /* 高亮失败项 */
+        .check-group.has-fail .check-group-header { background: #fff2f0; }
+        .check-group.has-error .check-group-header { background: #fffbe6; }
+
+        .check-group-details {
+            display: none;
+            border-top: 1px solid #eee;
+        }
+        .check-group.expanded .check-group-details { display: block; }
+
+        /* 详情表格 */
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .detail-table th {
+            background: #f5f7fa;
+            padding: 12px 15px;
+            text-align: left;
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+            border-bottom: 1px solid #eee;
+        }
+        .detail-table td {
+            padding: 12px 15px;
+            font-size: 14px;
+            border-bottom: 1px solid #eee;
+        }
+        .detail-table tr:last-child td { border-bottom: none; }
+        .detail-table tr.pass { background: #f6ffed; }
+        .detail-table tr.fail { background: #fff2f0; }
+        .detail-table tr.error { background: #fffbe6; }
+
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-badge.pass { background: #e6ffed; color: #52c41a; }
+        .status-badge.fail { background: #fff2f0; color: #f5222d; }
+        .status-badge.error { background: #fffbe6; color: #faad14; }
+
+        .value-cell {
+            font-family: Consolas, monospace;
+            font-size: 12px;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .value-cell:hover {
+            overflow: visible;
+            white-space: normal;
+            word-break: break-all;
+        }
+
+        /* 空状态 */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state .icon { font-size: 48px; margin-bottom: 15px; }
+        .empty-state p { font-size: 14px; }
+
+        /* 加载状态 */
+        .loading { text-align: center; padding: 40px; color: #999; }
+
+        @media (max-width: 768px) {
+            .summary-cards { grid-template-columns: repeat(2, 1fr); }
+            .overview-info { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>
+            <a href="/reports.html" class="back-btn">← 返回</a>
+            <span>检查报告详情</span>
+        </h1>
+        <div class="header-right">
+            <span id="currentUser"></span>
+            <button class="logout-btn" onclick="logout()">退出登录</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- 概览卡片 -->
+        <div id="overviewCard" class="overview-card">
+            <div class="loading">加载中...</div>
+        </div>
+
+        <!-- 汇总统计 -->
+        <div id="summaryCards" class="summary-cards" style="display: none;">
+            <div class="summary-card" data-filter="all" onclick="filterByStatus('all')">
+                <div class="value total" id="totalCount">0</div>
+                <div class="label">总检查项</div>
+            </div>
+            <div class="summary-card" data-filter="pass" onclick="filterByStatus('pass')">
+                <div class="value pass" id="passCount">0</div>
+                <div class="label">通过</div>
+            </div>
+            <div class="summary-card" data-filter="fail" onclick="filterByStatus('fail')">
+                <div class="value fail" id="failCount">0</div>
+                <div class="label">失败</div>
+            </div>
+            <div class="summary-card" data-filter="error" onclick="filterByStatus('error')">
+                <div class="value error" id="errorCount">0</div>
+                <div class="label">异常</div>
+            </div>
+        </div>
+
+        <!-- 工具栏 -->
+        <div id="toolbar" class="toolbar" style="display: none;">
+            <div class="toolbar-left">
+                <select id="typeFilter" class="filter-select" onchange="applyFilters()">
+                    <option value="">全部类型</option>
+                    <option value="file">文件系统</option>
+                    <option value="process">进程检查</option>
+                    <option value="port">端口检查</option>
+                    <option value="log">日志检查</option>
+                    <option value="config">配置检查</option>
+                </select>
+                <select id="statusFilter" class="filter-select" onchange="applyFilters()">
+                    <option value="">全部状态</option>
+                    <option value="pass">通过</option>
+                    <option value="fail">失败</option>
+                    <option value="error">异常</option>
+                </select>
+            </div>
+            <div class="toolbar-right">
+                <button class="btn btn-secondary" onclick="expandAll()">全部展开</button>
+                <button class="btn btn-secondary" onclick="collapseAll()">全部折叠</button>
+                <button class="btn btn-primary" onclick="exportPDF()">导出PDF</button>
+            </div>
+        </div>
+
+        <!-- 检查项分组列表 -->
+        <div id="checkGroups">
+        </div>
+    </div>
+
+    <script src="/static/js/common.js"></script>
+    <script src="/static/js/config.js"></script>
+    <script src="/static/js/report-detail.js"></script>
+</body>
+</html>
