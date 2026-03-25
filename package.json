@@ -1,0 +1,14 @@
+{
+  "name": "ev-check-system",
+  "version": "1.0.0",
+  "description": "EV Check System - 企业估值检查系统",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0",
+    "vitest": "^3.2.4"
+  }
+}
