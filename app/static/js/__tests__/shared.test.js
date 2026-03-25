@@ -45,10 +45,13 @@ async function loadSharedModule() {
 
         function getHeaders() {
             const token = localStorage.getItem('token');
-            return {
-                'Authorization': 'Bearer ' + token,
+            const headers = {
                 'Content-Type': 'application/json'
             };
+            if (token) {
+                headers['Authorization'] = 'Bearer ' + token;
+            }
+            return headers;
         }
 
         function logout() {
@@ -73,14 +76,22 @@ async function loadSharedModule() {
         }
 
         async function fetchJSON(url, options = {}) {
-            const res = await fetch(url, {
-                ...options,
-                headers: { ...getHeaders(), ...options.headers }
-            });
-            if (!res.ok) {
-                throw new Error('HTTP ' + res.status + ': ' + res.statusText);
+            try {
+                const res = await fetch(url, {
+                    ...options,
+                    headers: { ...getHeaders(), ...options.headers }
+                });
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({}));
+                    throw new Error(errorData.detail || errorData.message || 'HTTP ' + res.status + ': ' + res.statusText);
+                }
+                return res.json();
+            } catch (error) {
+                if (error instanceof TypeError) {
+                    throw new Error('网络连接失败，请检查网络设置');
+                }
+                throw error;
             }
-            return res.json();
         }
 
         function formatDate(dateString) {
@@ -116,13 +127,13 @@ describe('shared.js 模块测试', () => {
     });
 
     describe('getHeaders 函数', () => {
-        it('当没有 token 时应该返回基础 headers', async () => {
+        it('当没有 token 时应该返回基础 headers（不包含 Authorization）', async () => {
             const shared = await loadSharedModule();
             const headers = shared.getHeaders();
             expect(headers).toEqual({
-                'Authorization': 'Bearer null',
                 'Content-Type': 'application/json'
             });
+            expect(headers).not.toHaveProperty('Authorization');
         });
 
         it('当有 token 时应该包含 token', async () => {
@@ -207,12 +218,47 @@ describe('shared.js 模块测试', () => {
             global.fetch.mockResolvedValueOnce({
                 ok: false,
                 status: 404,
-                statusText: 'Not Found'
+                statusText: 'Not Found',
+                json: () => Promise.resolve({})
             });
 
             const shared = await loadSharedModule();
 
             await expect(shared.fetchJSON('/api/not-found')).rejects.toThrow('HTTP 404: Not Found');
+        });
+
+        it('当 HTTP 错误时应该优先使用响应中的 detail 信息', async () => {
+            global.fetch.mockResolvedValueOnce({
+                ok: false,
+                status: 400,
+                statusText: 'Bad Request',
+                json: () => Promise.resolve({ detail: '参数错误' })
+            });
+
+            const shared = await loadSharedModule();
+
+            await expect(shared.fetchJSON('/api/error')).rejects.toThrow('参数错误');
+        });
+
+        it('当 HTTP 错误时应该使用响应中的 message 信息', async () => {
+            global.fetch.mockResolvedValueOnce({
+                ok: false,
+                status: 500,
+                statusText: 'Internal Server Error',
+                json: () => Promise.resolve({ message: '服务器内部错误' })
+            });
+
+            const shared = await loadSharedModule();
+
+            await expect(shared.fetchJSON('/api/error')).rejects.toThrow('服务器内部错误');
+        });
+
+        it('当网络错误时应该抛出友好的错误信息', async () => {
+            global.fetch.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+            const shared = await loadSharedModule();
+
+            await expect(shared.fetchJSON('/api/test')).rejects.toThrow('网络连接失败，请检查网络设置');
         });
 
         it('应该合并自定义 headers', async () => {

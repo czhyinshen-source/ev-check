@@ -3,10 +3,13 @@ const API_BASE = '';
 
 function getHeaders() {
     const token = localStorage.getItem('token');
-    return {
-        'Authorization': 'Bearer ' + token,
+    const headers = {
         'Content-Type': 'application/json'
     };
+    if (token) {
+        headers['Authorization'] = 'Bearer ' + token;
+    }
+    return headers;
 }
 
 function logout() {
@@ -31,14 +34,22 @@ function showSuccess(message) {
 }
 
 async function fetchJSON(url, options = {}) {
-    const res = await fetch(url, {
-        ...options,
-        headers: { ...getHeaders(), ...options.headers }
-    });
-    if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    try {
+        const res = await fetch(url, {
+            ...options,
+            headers: { ...getHeaders(), ...options.headers }
+        });
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}));
+            throw new Error(errorData.detail || errorData.message || `HTTP ${res.status}: ${res.statusText}`);
+        }
+        return res.json();
+    } catch (error) {
+        if (error instanceof TypeError) {
+            throw new Error('网络连接失败，请检查网络设置');
+        }
+        throw error;
     }
-    return res.json();
 }
 
 function formatDate(dateString) {
