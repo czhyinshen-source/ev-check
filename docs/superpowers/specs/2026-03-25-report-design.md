@@ -2,7 +2,7 @@
 
 **项目：** EV Check System（运行环境检查系统）
 **日期：** 2026-03-25
-**状态：** 已确认
+**状态：** 已修订（v2 — 整合已有后端 PDF 导出）
 
 ---
 
@@ -20,29 +20,72 @@
 
 ## 二、技术方案
 
-**架构模式：** 轻量前端渲染
+### 2.1 架构模式
 
-**页面结构：**
-- `/reports` — 历史报告列表页
-- `/reports/{result_id}` — 报告详情页
+**混合方案：**
+- 报告展示 → 前端渲染（`/reports.html` + `reports.js`）
+- PDF 导出 → 复用后端已有 `reportlab` 实现（`GET /api/v1/checks/{result_id}/export?format=pdf`），前端直接下载
 
-**技术选型：**
-- PDF 库：`html2pdf.js`（浏览器端直接生成，无需后端）
-- 无需新增后端 API（复用现有检查结果 API）
-- 无需新增数据库表（复用现有 `CheckResult` / `CheckResultDetail` 数据）
+> **注：** 审查发现项目中已有 `reportlab` 后端 PDF 导出（`app/services/report_exporter.py`）和 API 端点（`GET /api/v1/checks/{result_id}/export`）。本模块复用该实现，前端只需调用现有端点下载 PDF，无需引入 `html2pdf.js`。后续如需更丰富的 PDF 样式可迭代升级。
 
-**页面入口：**
-1. 检查执行完成 → 自动跳转 `/reports/{result_id}` 查看报告
-2. 历史报告列表 → 用户从 `/reports` 选择任意历史报告查看
+### 2.2 API 路径（已确认）
 
-**三层页面结构：**
+所有 API 路径使用 `/api/v1/` 前缀：
+
+| 用途 | 路径 |
+|------|------|
+| 历史报告列表 | `GET /api/v1/checks` |
+| 单次报告详情 | `GET /api/v1/checks/{result_id}` |
+| 报告进度 | `GET /api/v1/checks/{result_id}/progress` |
+| PDF 导出（已有） | `GET /api/v1/checks/{result_id}/export?format=pdf` |
+
+### 2.3 数据模型说明
+
+#### 粒度理解（关键）
+
+系统中数据粒度为：
+
 ```
-报告列表页 (/reports)
-    └── 报告详情页 (/reports/{result_id})
+CheckResult（1条） = 1台服务器 × 1次检查执行
+CheckResultDetail（N条） = 该次执行中每个检查项的结果
+```
+
+- 一台服务器的完整检查执行 = 1 个 `CheckResult`
+- 该执行中每个检查项 = 1 个 `CheckResultDetail`
+- 批量检查（多台服务器）= 多个 `CheckResult`，拥有相同的 `rule_id`
+
+#### 批量结果聚合
+
+报告列表和报告详情需要聚合展示多台服务器的结果。设计如下：
+
+- **报告列表页** — 以 `rule_id` + `start_time` 为基准，将同一次批量执行的所有 `CheckResult` 聚合为一个报告卡片
+  - 服务器数 = 该批次的 `CheckResult` 数量
+  - 通过/失败/异常 = 汇总所有 `CheckResultDetail` 的状态
+  - 点击「查看报告」→ 进入报告详情
+
+- **报告详情页** — 按检查项聚合展示
+  - 汇总表中的每一行 = 一个检查项（跨所有服务器汇总）
+  - 展开后的明细表 = 该检查项在每台服务器上的结果
+  - 需要前端 JS 按 `check_item_id` 分组聚合 `CheckResultDetail`
+
+#### 字段补充需求
+
+| 字段 | 当前状态 | 需要的处理 |
+|------|---------|-----------|
+| `snapshot_name` | `CheckResultResponse` 有 `snapshot_id` 但无 `snapshot_name` | 需扩展 API：在 `CheckResultResponse` 中增加 `snapshot_name` 字段 |
+| `trigger_method`（触发方式） | 数据模型中无此字段 | 需扩展数据模型或 API 响应，增加触发方式字段 |
+| `duration_seconds` | `CheckResultResponse` 已有此字段 ✅ | 无需处理 |
+| `expected_value` / `actual_value` | `JSON` 字段（Python dict），非纯文本 | 前端需针对不同检查类型（文件权限、进程状态等）格式化展示 |
+
+### 2.4 页面结构
+
+```
+报告列表页 (/reports.html)
+    └── 报告详情页 (/report-detail.html?result_id={id})
             ├── 概览区（执行信息、总览统计）
             ├── 汇总表（各检查项通过率，缩略展示）
             ├── 明细区（展开后：每台服务器的原始值/期望值/状态）
-            └── PDF 导出按钮
+            └── PDF 导出按钮（调用已有后端 API）
 ```
 
 ---
@@ -55,12 +98,14 @@
 ┌─────────────────────────────────────────────────────────┐
 │ ● 检查规则: 生产环境日常检查              执行时间: 2026-03-25 14:30 │
 │   关联快照: 2026-03-20 快照                               │
-│   触发方式: 手动执行          耗时: 2分35秒               │
+│   服务器: 3台   触发方式: 手动执行   耗时: 2分35秒         │
 │   ─────────────────────────────────────────────────────── │
 │   检查项: 48  │  ✅ 通过 42  │  ❌ 失败 5  │  ⚠️ 异常 1   │
 │                                           [查看报告] [导出PDF] │
 └─────────────────────────────────────────────────────────┘
 ```
+
+> **注：** 批量检查的多个 `CheckResult` 聚合成一个报告卡片。「服务器」字段显示数量，「检查项」汇总所有 `CheckResultDetail` 的状态。
 
 **列表筛选（顶部）：**
 - 按执行时间范围筛选
@@ -75,14 +120,15 @@
 
 ### 4.1 概览区（顶部卡片）
 
-| 字段 | 内容示例 |
-|------|---------|
-| 执行ID | #12345 |
-| 执行时间 | 2026-03-25 14:30:22 |
-| 触发方式 | 手动执行 / 定时任务 |
-| 执行耗时 | 2分35秒 |
-| 关联规则 | "生产环境日常检查" |
-| 关联快照 | "2026-03-20 快照" |
+| 字段 | 内容示例 | 数据来源 |
+|------|---------|---------|
+| 执行ID | #12345 | `result_id` |
+| 执行时间 | 2026-03-25 14:30:22 | `start_time` |
+| 服务器 | Web服务器-01 / 3台服务器（聚合视图） | `communication_name` / 聚合计数 |
+| 触发方式 | 手动执行 / 定时任务 | **需新增字段** |
+| 执行耗时 | 2分35秒 | `duration_seconds` ✅ |
+| 关联规则 | "生产环境日常检查" | `rule_name` ✅ |
+| 关联快照 | "2026-03-20 快照" | **需新增** `snapshot_name` 字段 |
 
 ### 4.2 汇总统计
 
@@ -113,6 +159,8 @@
 └─────────────────────────────────────────────────────────┘
 ```
 
+> **数据来源：** 汇总表按 `check_item_id` 分组，聚合所有 `CheckResultDetail`。前端 JS 需要将多个 `CheckResult` 的详情按检查项分组计算。
+
 **缩略视图交互：**
 - 默认收起，只显示汇总行
 - 点击展开按钮（▼）展开该检查项的服务器明细表
@@ -135,54 +183,100 @@
 
 | 服务器 | IP | 检查结果 | 期望值 | 实际值 | 详情 |
 |-------|-----|---------|-------|-------|------|
-| Web服务器-01 | 192.168.1.10 | ✅ 通过 | 文件存在，权限 644 | 权限 644 | — |
-| DB服务器-01 | 192.168.1.20 | ❌ 失败 | 权限 644 | 权限 777 | 权限不符合要求 |
-| App服务器-01 | 192.168.1.30 | ✅ 通过 | 文件存在，权限 644 | 权限 644 | — |
+| Web服务器-01 | 192.168.1.10 | ✅ 通过 | 详见下方 | 详见下方 | — |
+| DB服务器-01 | 192.168.1.20 | ❌ 失败 | 详见下方 | 详见下方 | 权限不符合要求 |
+| App服务器-01 | 192.168.1.30 | ✅ 通过 | 详见下方 | 详见下方 | — |
 
-明细区同样支持筛选和排序。
+**JSON 格式化规则：**
+- `expected_value` 和 `actual_value` 为 JSON dict，前端按检查类型格式化展示：
+  - 文件系统类：提取 `permission`、`owner`、`size` 等字段
+  - 进程类：提取 `pid`、`status`、`memory` 等字段
+  - 端口类：提取 `port`、`state` 等字段
+  - 日志类：提取 `matched_lines`、`error_count` 等字段
+
+### 4.6 跳转对比历史快照
+
+设计待补充。当前仅作为 UI 链接入口存在，实际对比功能在后续迭代实现。
 
 ---
 
 ## 五、PDF 导出设计
 
-- 使用 `html2pdf.js` 在浏览器端直接生成 PDF
-- 导出按钮位于报告详情页顶部
-- PDF 内容包含当前报告的完整信息（概览 + 汇总 + 明细）
-- PDF 样式：深交所风格，与 Web 页面视觉一致
-- 一次性生成完整报告，无需选择性导出
+**复用现有后端实现：**
+
+- 端点：`GET /api/v1/checks/{result_id}/export?format=pdf`
+- 服务：`app/services/report_exporter.py` 中的 `PDFExporter`
+- 前端：导出按钮直接 `window.open` 或 `fetch` 下载
+
+**后续迭代方向：**
+- 增强 PDF 样式（深交所风格 logo、签章页）
+- 支持批量导出多台服务器各自独立的 PDF
+- 支持选择性导出（勾选服务器/检查类型）
+
+> **注：** 当前 `reportlab` PDF 导出的表格样式较基础（简单列表 + 检查项ID），详细报告的深交所风格 PDF 排版在后续迭代中逐步完善。报告列表页和详情页的前端展示是本阶段的核心交付物。
 
 ---
 
-## 六、实现要点
+## 六、后端改动
 
-### 6.1 前端改动
+### 6.1 必需改动
 
-1. **新增报告列表页** `app/static/reports.html`
-2. **改造报告详情页** — 整合到 dashboard 或新建独立页面
-3. **新增报告相关 JS** `app/static/js/reports.js` — 负责数据拉取、渲染、筛选排序逻辑
-4. **引入 `html2pdf.js`** — PDF 生成
-5. **复用现有 API：**
-   - `GET /api/checks/` — 历史检查结果列表
-   - `GET /api/checks/{id}` — 单次检查执行详情
-   - `GET /api/check-rules/` — 关联规则信息
+1. **扩展 `CheckResultResponse`** — 增加 `snapshot_name` 字段（关联 Snapshot 表获取名称）
+2. **扩展 `CheckResultListItem`** — 增加 `duration_seconds`、`snapshot_name`、`server_count`（同 rule_id + start_time 批次的服务器数）、`summary`（汇总通过/失败/异常数）
+3. **扩展 `CheckResultDetailResponse`** — 增加 `check_item_name`、`check_item_type`（已有 ✅）
 
-### 6.2 后端改动
+### 6.2 可选改动
 
-- 无需新增 API（复用现有 API）
-- 可选：根据展示需求适当扩展 `CheckResult` 返回字段（如增加执行耗时汇总、关联快照名称等）
-
-### 6.3 页面跳转逻辑
-
-- 检查执行完成后，前端自动跳转到 `/reports/{result_id}`
-- 报告列表页的「查看报告」按钮跳转到报告详情页
-- 报告列表页的「导出PDF」按钮直接触发当前卡片对应报告的 PDF 下载
+1. **增加 `trigger_method` 字段** — 在 `CheckResult` 模型中增加触发方式字段，或通过 API 推断（检查 `ScheduledTask` 的 `last_run_at` 是否匹配）
+2. **批量结果聚合 API** — 新增 `GET /api/v1/checks/batch-report/{rule_id}/{start_time}` 专门返回聚合后的批量报告数据，避免前端做大量聚合计算
 
 ---
 
-## 七、非功能性要求
+## 七、前端实现要点
+
+### 7.1 新增文件
+
+| 文件 | 用途 |
+|------|------|
+| `app/static/reports.html` | 报告列表页 |
+| `app/static/report-detail.html` | 报告详情页 |
+| `app/static/js/reports.js` | 报告列表 JS（数据拉取、渲染、筛选） |
+| `app/static/js/report-detail.js` | 报告详情 JS（聚合、缩略/展开、PDF 下载） |
+
+### 7.2 复用现有 API
+
+| API | 用途 |
+|-----|------|
+| `GET /api/v1/checks` | 报告列表（需扩展 Response） |
+| `GET /api/v1/checks/{result_id}` | 单次报告详情（需扩展 Response） |
+| `GET /api/v1/checks/{result_id}/export?format=pdf` | PDF 导出（已有） |
+
+### 7.3 页面跳转逻辑
+
+- 检查执行完成后 → 前端跳转 `/report-detail.html?result_id={id}`
+- 报告列表页「查看报告」→ 跳转 `/report-detail.html?result_id={id}`
+- 报告列表页「导出PDF」→ 直接 `window.open('/api/v1/checks/{id}/export?format=pdf')`
+- 报告详情页「导出PDF」按钮 → 同上
+
+---
+
+## 八、非功能性要求
 
 - 页面加载时显示骨架屏或加载状态
 - 明细展开/折叠使用平滑动画过渡
-- PDF 导出时显示 loading 提示，导出完成后自动下载
+- PDF 导出时按钮显示 loading 状态，导出完成后自动下载
 - 响应式布局，支持在不同屏幕尺寸下查看报告
 - 历史报告数据来自数据库持久化，无需额外缓存
+- 前端 JS 对 JSON 字段（`expected_value`/`actual_value`）做类型化格式化处理
+
+---
+
+## 九、实现优先级
+
+| 优先级 | 内容 |
+|--------|------|
+| P0 | 报告详情页（前端展示 + 缩略/展开 + PDF 下载） |
+| P0 | 后端 API 扩展（snapshot_name, duration_seconds, summary 等字段） |
+| P1 | 报告列表页（历史记录卡片展示 + 筛选） |
+| P2 | 批量结果聚合（批量检查的多服务器聚合展示） |
+| P3 | 触发方式字段 + PDF 样式增强 |
