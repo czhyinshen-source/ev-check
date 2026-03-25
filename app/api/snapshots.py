@@ -5,10 +5,11 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models import User, SnapshotGroup, Snapshot, SnapshotInstance, EnvironmentData, Communication
-from app.models.check_item import CheckItem, CheckItemList, CheckItemListItem
+from app.models.check_item import CheckItem, CheckItemList
 from app.models.check_result import CheckRule
 from app.api.users import get_current_active_user
 from app.utils.ssh_client import SSHClientWrapper
@@ -30,14 +31,59 @@ async def list_snapshot_groups(
         {
             "id": g.id,
             "name": g.name,
+            "parent_id": g.parent_id,
             "check_item_list_id": g.check_item_list_id,
             "default_snapshot_id": g.default_snapshot_id,
+            "is_system": g.is_system,
             "description": g.description,
             "created_at": g.created_at.isoformat(),
             "updated_at": g.updated_at.isoformat(),
         }
         for g in groups
     ]
+
+
+@router.get("/groups/tree", response_model=List[dict])
+async def get_snapshot_group_tree(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取快照组树形结构"""
+    # 获取所有快照组
+    result = await db.execute(select(SnapshotGroup))
+    groups = result.scalars().all()
+    
+    # 构建树形结构
+    group_map = {g.id: g for g in groups}
+    tree = []
+    
+    def build_tree(group_id):
+        group = group_map.get(group_id)
+        if not group:
+            return None
+        
+        children = [build_tree(child.id) for child in group.children]
+        children = [child for child in children if child]
+        
+        return {
+            "id": group.id,
+            "name": group.name,
+            "parent_id": group.parent_id,
+            "check_item_list_id": group.check_item_list_id,
+            "default_snapshot_id": group.default_snapshot_id,
+            "is_system": group.is_system,
+            "description": group.description,
+            "children": children,
+        }
+    
+    # 从根节点开始构建
+    for group in groups:
+        if group.parent_id is None:
+            tree_node = build_tree(group.id)
+            if tree_node:
+                tree.append(tree_node)
+    
+    return tree
 
 
 @router.post("/groups", status_code=status.HTTP_201_CREATED)
@@ -49,7 +95,9 @@ async def create_snapshot_group(
     """创建快照组"""
     db_group = SnapshotGroup(
         name=group["name"],
+        parent_id=group.get("parent_id"),
         check_item_list_id=group.get("check_item_list_id"),
+        is_system=group.get("is_system", False),
         description=group.get("description"),
     )
     db.add(db_group)
@@ -72,8 +120,10 @@ async def get_snapshot_group(
     return {
         "id": group.id,
         "name": group.name,
+        "parent_id": group.parent_id,
         "check_item_list_id": group.check_item_list_id,
         "default_snapshot_id": group.default_snapshot_id,
+        "is_system": group.is_system,
         "description": group.description,
     }
 
@@ -90,6 +140,10 @@ async def update_snapshot_group(
     db_group = result.scalar_one_or_none()
     if not db_group:
         raise HTTPException(status_code=404, detail="快照组不存在")
+
+    # 不允许修改系统分组的is_system属性
+    if "is_system" in group and db_group.is_system:
+        del group["is_system"]
 
     for key, value in group.items():
         if hasattr(db_group, key):
@@ -111,6 +165,18 @@ async def delete_snapshot_group(
     group = result.scalar_one_or_none()
     if not group:
         raise HTTPException(status_code=404, detail="快照组不存在")
+
+    # 检查是否为系统分组
+    if group.is_system:
+        raise HTTPException(status_code=400, detail="系统分组不可删除")
+
+    # 检查是否有子分组
+    if group.children:
+        raise HTTPException(status_code=400, detail="请先删除子分组")
+
+    # 检查是否有快照
+    if group.snapshots:
+        raise HTTPException(status_code=400, detail="请先删除或迁移快照")
 
     await db.delete(group)
     await db.commit()
@@ -209,49 +275,6 @@ async def delete_snapshot(
     await db.commit()
 
 
-@router.get("/rules", response_model=List[dict])
-async def list_check_rules(
-    skip: int = 0,
-    limit: int = 100,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """获取检查规则列表"""
-    result = await db.execute(select(CheckRule).offset(skip).limit(limit))
-    rules = result.scalars().all()
-    return [
-        {
-            "id": r.id,
-            "name": r.name,
-            "check_item_list_id": r.check_item_list_id,
-            "snapshot_id": r.snapshot_id,
-            "description": r.description,
-            "created_at": r.created_at.isoformat(),
-            "updated_at": r.updated_at.isoformat(),
-        }
-        for r in rules
-    ]
-
-
-@router.post("/rules", status_code=status.HTTP_201_CREATED)
-async def create_check_rule(
-    rule: dict,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
-):
-    """创建检查规则"""
-    db_rule = CheckRule(
-        name=rule["name"],
-        check_item_list_id=rule.get("check_item_list_id"),
-        snapshot_id=rule.get("snapshot_id"),
-        description=rule.get("description"),
-    )
-    db.add(db_rule)
-    await db.commit()
-    await db.refresh(db_rule)
-    return {"id": db_rule.id, "name": db_rule.name}
-
-
 @router.post("/{snapshot_id}/build")
 async def build_snapshot(
     snapshot_id: int,
@@ -301,15 +324,13 @@ async def build_snapshot(
         
         if snapshot.group and snapshot.group.check_item_list_id:
             result = await db.execute(
-                select(CheckItemListItem).where(
-                    CheckItemListItem.list_id == snapshot.group.check_item_list_id
+                select(CheckItem).where(
+                    CheckItem.list_id == snapshot.group.check_item_list_id
                 )
             )
-            item_links = result.scalars().all()
-            
-            for link in item_links:
-                result = await db.execute(select(CheckItem).where(CheckItem.id == link.item_id))
-                check_item = result.scalar_one_or_none()
+            check_items = result.scalars().all()
+
+            for check_item in check_items:
                 if not check_item:
                     continue
                 

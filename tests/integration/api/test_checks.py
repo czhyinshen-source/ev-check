@@ -1,0 +1,121 @@
+"""检查 API 集成测试"""
+import pytest
+from httpx import AsyncClient, ASGITransport
+from datetime import datetime
+from typing import AsyncGenerator
+
+from app.main import app
+from app.database import get_db
+from app.models import CheckResult, CheckResultDetail
+
+
+@pytest.fixture
+async def test_check_result(db_session, test_check_rule, test_communication):
+    """创建测试检查结果"""
+    result = CheckResult(
+        rule_id=test_check_rule.id,
+        communication_id=test_communication.id,
+        status="success",
+        start_time=datetime(2026, 3, 25, 14, 30, 0),
+        end_time=datetime(2026, 3, 25, 14, 35, 0),
+        progress=100,
+    )
+    db_session.add(result)
+    await db_session.commit()
+    await db_session.refresh(result)
+    return result
+
+
+@pytest.fixture
+async def test_check_result_with_details(db_session, test_check_rule, test_communication, test_check_items):
+    """创建带详情的测试检查结果"""
+    result = CheckResult(
+        rule_id=test_check_rule.id,
+        communication_id=test_communication.id,
+        status="success",
+        start_time=datetime(2026, 3, 25, 14, 30, 0),
+        end_time=datetime(2026, 3, 25, 14, 35, 0),
+        progress=100,
+    )
+    db_session.add(result)
+    await db_session.flush()
+
+    # 创建详情
+    details = []
+    for i, item in enumerate(test_check_items):
+        detail = CheckResultDetail(
+            result_id=result.id,
+            check_item_id=item.id,
+            status="pass" if i == 0 else ("fail" if i == 1 else "error"),
+            expected_value={"permission": "644"},
+            actual_value={"permission": "644" if i == 0 else "755"},
+            message="" if i == 0 else ("权限不符" if i == 1 else "连接失败"),
+        )
+        db_session.add(detail)
+        details.append(detail)
+
+    await db_session.commit()
+    await db_session.refresh(result)
+    return result
+
+
+def _get_override_db(db_session):
+    """返回覆盖数据库依赖的函数"""
+    async def _override_get_db() -> AsyncGenerator:
+        yield db_session
+    return _override_get_db
+
+
+@pytest.mark.asyncio
+async def test_check_result_list_item_fields(auth_headers, test_check_result_with_details, db_session):
+    """验证 CheckResultListItem 包含新增字段"""
+    app.dependency_overrides[get_db] = _get_override_db(db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/v1/checks", headers=auth_headers)
+            assert resp.status_code == 200
+            data = resp.json()
+            # 验证返回字段存在（即使为空值）
+            if data:
+                item = data[0]
+                assert "duration_seconds" in item
+                assert "snapshot_id" in item
+                assert "snapshot_name" in item
+                assert "server_count" in item
+                assert "summary" in item
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_check_result_not_found(auth_headers, db_session):
+    """验证不存在的检查结果返回 404"""
+    app.dependency_overrides[get_db] = _get_override_db(db_session)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.get("/api/v1/checks/99999", headers=auth_headers)
+            assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.clear()
+
+
+# 单元测试：验证 Schema 字段定义
+def test_check_result_list_item_schema():
+    """验证 CheckResultListItem Schema 字段定义"""
+    from app.schemas.check import CheckResultListItem
+    fields = CheckResultListItem.model_fields
+    assert "duration_seconds" in fields
+    assert "snapshot_id" in fields
+    assert "snapshot_name" in fields
+    assert "server_count" in fields
+    assert "summary" in fields
+
+
+def test_check_result_response_schema():
+    """验证 CheckResultResponse Schema 字段定义"""
+    from app.schemas.check import CheckResultResponse
+    fields = CheckResultResponse.model_fields
+    assert "snapshot_name" in fields
+    assert "duration_seconds" in fields
+    assert "summary" in fields
+    assert "details" in fields

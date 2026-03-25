@@ -1,6 +1,7 @@
 """pytest 配置文件"""
 import pytest
 import asyncio
+from datetime import datetime
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import StaticPool
 
@@ -119,7 +120,7 @@ async def test_communication(db_session, test_group):
         ip_address="192.168.1.100",
         port=22,
         username="admin",
-        auth_type="password",
+        password="test_password",
         group_id=test_group.id,
         description="测试用途",
         is_active=True
@@ -139,7 +140,7 @@ async def test_communications(db_session, test_group):
             ip_address=f"192.168.1.10{i}",
             port=22,
             username="admin",
-            auth_type="password",
+            password="test_password",
             group_id=test_group.id,
             description="测试用途",
             is_active=True
@@ -148,12 +149,12 @@ async def test_communications(db_session, test_group):
     ]
     for comm in comms:
         db_session.add(comm)
-    
+
     await db_session.commit()
-    
+
     for comm in comms:
         await db_session.refresh(comm)
-    
+
     return comms
 
 
@@ -261,10 +262,9 @@ async def test_snapshot(db_session, test_snapshot_group):
     snapshot = Snapshot(
         group_id=test_snapshot_group.id,
         name="测试快照",
-        snapshot_time="2026-03-05 10:00:00",
+        snapshot_time=datetime(2026, 3, 5, 10, 0, 0),
         is_default=False,
         description="测试用途",
-        created_by="test_user"
     )
     db_session.add(snapshot)
     await db_session.commit()
@@ -273,14 +273,14 @@ async def test_snapshot(db_session, test_snapshot_group):
 
 
 @pytest.fixture
-async def test_check_rule(db_session):
+async def test_check_rule(db_session, test_snapshot):
     """创建测试检查规则"""
+    import uuid
+    unique_id = str(uuid.uuid4())[:8]
     rule = CheckRule(
-        name="测试检查规则",
+        name=f"测试检查规则_{unique_id}",
         description="测试用途",
-        time_range_start=0,
-        time_range_end=235959,
-        allow_all_day=True
+        snapshot_id=test_snapshot.id,
     )
     db_session.add(rule)
     await db_session.commit()
