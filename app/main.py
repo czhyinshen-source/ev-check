@@ -92,3 +92,25 @@ async def dashboard_html():
 async def health():
     """健康检查"""
     return {"status": "healthy"}
+
+
+@app.get("/final_v7.html")
+async def final_test_v7():
+    """最终测试页面 v7"""
+    from fastapi.responses import FileResponse
+    response = FileResponse("app/static/final_v7.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
+@app.get("/test_comm_connection.html")
+async def test_comm_connection():
+    """测试通信机连接页面"""
+    from fastapi.responses import FileResponse
+    response = FileResponse("app/static/test_comm_connection.html")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response

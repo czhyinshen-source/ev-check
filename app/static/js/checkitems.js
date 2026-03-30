@@ -1,34 +1,75 @@
 // 检查项管理模块
 
+// 解析 type 字段（可能是 JSON 字符串、数组或单个字符串）
+function parseItemType(type) {
+    if (Array.isArray(type)) {
+        return type;
+    }
+    if (typeof type === 'string') {
+        try {
+            const parsed = JSON.parse(type);
+            if (Array.isArray(parsed)) {
+                return parsed;
+            }
+            return [parsed];
+        } catch (e) {
+            return [type];
+        }
+    }
+    return [type];
+}
+
 // 打开检查项列表模态框
 function openCheckItemListModal(id = null) {
-    document.getElementById('checkItemListId').value = id || '';
-    document.getElementById('checkItemListName').value = '';
-    document.getElementById('checkItemListDesc').value = '';
-    document.getElementById('checkItemListModalTitle').textContent = id ? '编辑检查项列表' : '添加检查项列表';
-    document.getElementById('checkItemListModal').classList.add('active');
+    const el = (id) => document.getElementById(id);
+    if (el('checkItemListId')) el('checkItemListId').value = id || '';
+    if (el('checkItemListName')) el('checkItemListName').value = '';
+    if (el('checkItemListDesc')) el('checkItemListDesc').value = '';
+    if (el('checkItemListModalTitle')) el('checkItemListModalTitle').textContent = id ? '编辑检查项列表' : '添加检查项列表';
+    if (el('checkItemListModal')) el('checkItemListModal').classList.add('active');
 }
 
 // 打开检查项模态框
 function openCheckItemModal(id = null) {
-    document.getElementById('checkItemId').value = id || '';
-    document.getElementById('checkItemName').value = '';
-    document.getElementById('checkItemTarget').value = '';
-    document.getElementById('checkItemDesc').value = '';
+    const el = (id) => document.getElementById(id);
+    if (el('checkItemId')) el('checkItemId').value = id || '';
+    if (el('checkItemName')) el('checkItemName').value = '';
+    if (el('checkItemTarget')) el('checkItemTarget').value = '';
+    if (el('checkItemDesc')) el('checkItemDesc').value = '';
     // 重置检查类型复选框
     document.querySelectorAll('input[name="checkItemType"]').forEach(checkbox => {
         checkbox.checked = false;
     });
-    toggleCheckItemFields();
-    document.getElementById('checkItemModalTitle').textContent = id ? '编辑检查项' : '添加检查项';
-    document.getElementById('checkItemModal').classList.add('active');
+    if (typeof toggleCheckItemFields === 'function') toggleCheckItemFields();
+    if (el('checkItemModalTitle')) el('checkItemModalTitle').textContent = id ? '编辑检查项' : '添加检查项';
+
+    // 加载检查项列表到选择器
+    loadCheckItemListSelect();
+
+    if (el('checkItemModal')) el('checkItemModal').classList.add('active');
+}
+
+// 加载检查项列表到选择器
+async function loadCheckItemListSelect() {
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists`, { headers: window.shared.getHeaders() });
+        if (!res.ok) return;
+        const lists = await res.json();
+        const select = document.getElementById('checkItemListSelect');
+        if (select) {
+            select.innerHTML = '<option value="">不指定</option>' +
+                lists.map(list => `<option value="${list.id}">${list.name}</option>`).join('');
+        }
+    } catch (e) {
+        console.error('加载检查项列表失败:', e);
+    }
 }
 
 
 // 加载检查项列表
 async function loadCheckItemLists() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/check-items/lists`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists`, { headers: window.shared.getHeaders() });
         if (!res.ok) {
             const error = await res.json();
             console.error('加载检查项列表失败:', error);
@@ -74,13 +115,14 @@ async function loadCheckItemLists() {
 // 编辑检查项列表
 async function editCheckItemList(id) {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists/${id}`, { headers: window.shared.getHeaders() });
         const list = await res.json();
-        document.getElementById('checkItemListId').value = id;
-        document.getElementById('checkItemListName').value = list.name;
-        document.getElementById('checkItemListDesc').value = list.description || '';
-        document.getElementById('checkItemListModalTitle').textContent = '编辑检查项列表';
-        document.getElementById('checkItemListModal').classList.add('active');
+        const el = (eid) => document.getElementById(eid);
+        if (el('checkItemListId')) el('checkItemListId').value = id;
+        if (el('checkItemListName')) el('checkItemListName').value = list.name || '';
+        if (el('checkItemListDesc')) el('checkItemListDesc').value = list.description || '';
+        if (el('checkItemListModalTitle')) el('checkItemListModalTitle').textContent = '编辑检查项列表';
+        if (el('checkItemListModal')) el('checkItemListModal').classList.add('active');
     } catch (e) { console.error(e); }
 }
 
@@ -88,9 +130,9 @@ async function editCheckItemList(id) {
 async function deleteCheckItemList(id) {
     if (!confirm('确定删除此检查项列表?')) return;
     try {
-        await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { 
+        await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists/${id}`, { 
             method: 'DELETE', 
-            headers: getHeaders() 
+            headers: window.shared.getHeaders() 
         });
         loadCheckItemLists();
         loadCheckItems();
@@ -100,23 +142,30 @@ async function deleteCheckItemList(id) {
 // 加载检查项
 async function loadCheckItems(listId = '') {
     try {
+        const { API_BASE } = window.shared;
         let url = `${API_BASE}/api/v1/check-items`;
         if (listId) {
             url = `${API_BASE}/api/v1/check-items?list_id=${listId}`;
         }
 
-        const res = await fetch(url, { headers: getHeaders() });
+        const res = await fetch(url, { headers: window.shared.getHeaders() });
         const items = await res.json();
         const tbody = document.getElementById('checkItemTable');
 
         // 直接使用返回的数组
         const checkItems = items;
 
+        // 格式化检查类型用于显示
+        const formatType = (type) => {
+            const types = parseItemType(type);
+            return types.join(', ');
+        };
+
         tbody.innerHTML = checkItems.map(item => `
             <tr>
                 <td>${item.order_index || item.id}</td>
                 <td>${item.name}</td>
-                <td>${item.type}</td>
+                <td>${formatType(item.type)}</td>
                 <td>${item.target_path || '-'}</td>
                 <td>${item.list_name || (listId ? getCurrentCheckItemName() : '-')}</td>
                 <td>${item.description || '-'}</td>
@@ -162,23 +211,38 @@ function selectCheckItemList(listId) {
 // 编辑检查项
 async function editCheckItem(id) {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
+        // 先加载列表选择器
+        await loadCheckItemListSelect();
+
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/${id}`, { headers: window.shared.getHeaders() });
         const item = await res.json();
-        document.getElementById('checkItemId').value = id;
-        document.getElementById('checkItemName').value = item.name;
-        document.getElementById('checkItemTarget').value = item.target || '';
-        document.getElementById('checkItemDesc').value = item.description || '';
+        const el = (eid) => document.getElementById(eid);
+        if (el('checkItemId')) el('checkItemId').value = id;
+        if (el('checkItemName')) el('checkItemName').value = item.name || '';
+        if (el('checkItemTarget')) el('checkItemTarget').value = item.target_path || '';
+        if (el('checkItemDesc')) el('checkItemDesc').value = item.description || '';
+        // 设置所属列表
+        if (el('checkItemListSelect')) {
+            el('checkItemListSelect').value = item.list_id || '';
+        }
         // 设置检查类型复选框
         if (item.type) {
-            const typeArray = Array.isArray(item.type) ? item.type : [item.type];
+            console.log('原始 type:', item.type, typeof item.type);
+            const typeArray = parseItemType(item.type);
+            console.log('解析后 typeArray:', typeArray);
             typeArray.forEach(type => {
-                const checkbox = document.querySelector(`input[name="checkItemType"][value="${type}"]`);
-                if (checkbox) checkbox.checked = true;
+                // 对每个 type 单独查找并设置
+                const checkboxes = document.querySelectorAll('input[name="checkItemType"]');
+                checkboxes.forEach(cb => {
+                    if (type.includes(cb.value) || cb.value.includes(type)) {
+                        cb.checked = true;
+                    }
+                });
             });
         }
-        toggleCheckItemFields();
-        document.getElementById('checkItemModalTitle').textContent = '编辑检查项';
-        document.getElementById('checkItemModal').classList.add('active');
+        if (typeof toggleCheckItemFields === 'function') toggleCheckItemFields();
+        if (el('checkItemModalTitle')) el('checkItemModalTitle').textContent = '编辑检查项';
+        if (el('checkItemModal')) el('checkItemModal').classList.add('active');
     } catch (e) { console.error(e); }
 }
 
@@ -186,9 +250,9 @@ async function editCheckItem(id) {
 async function deleteCheckItem(id) {
     if (!confirm('确定删除此检查项?')) return;
     try {
-        await fetch(`${API_BASE}/api/v1/check-items/${id}`, { 
+        await fetch(`${window.shared.API_BASE}/api/v1/check-items/${id}`, { 
             method: 'DELETE', 
-            headers: getHeaders() 
+            headers: window.shared.getHeaders() 
         });
         loadCheckItems();
     } catch (e) { console.error(e); }
@@ -294,15 +358,15 @@ function toggleRouteCheckFields() {
 // 克隆检查项列表
 async function cloneCheckItemList(id) {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists/${id}`, { headers: window.shared.getHeaders() });
         const list = await res.json();
 
         const newName = list.name + ' (复制)';
 
         // 调用后端复制API
-        const copyRes = await fetch(`${API_BASE}/api/v1/check-items/lists/${id}/copy`, {
+        const copyRes = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists/${id}/copy`, {
             method: 'POST',
-            headers: getHeaders(),
+            headers: window.shared.getHeaders(),
             body: JSON.stringify({ new_name: newName })
         });
 
@@ -322,15 +386,21 @@ async function cloneCheckItemList(id) {
 // 克隆检查项
 async function cloneCheckItem(id) {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
+        // 先加载列表选择器
+        await loadCheckItemListSelect();
+
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/${id}`, { headers: window.shared.getHeaders() });
         const item = await res.json();
 
         // 打开模态框并预填信息（与编辑相同）
         document.getElementById('checkItemId').value = '';
         document.getElementById('checkItemName').value = `${item.name} (复制)`;
         document.getElementById('checkItemDesc').value = item.description || '';
+        // 设置所属列表
+        document.getElementById('checkItemListSelect').value = item.list_id || '';
 
-        const types = Array.isArray(item.type) ? item.type : [item.type];
+        // 解析 type 字段
+        const types = parseItemType(item.type);
 
         // 判断检查项分类
         let category = '';
@@ -419,6 +489,7 @@ async function cloneCheckItem(id) {
 
 // 导出模块
 window.checkitems = {
+    parseItemType,
     openCheckItemListModal,
     openCheckItemModal,
     toggleCheckItemFields,
@@ -433,6 +504,7 @@ window.checkitems = {
     cloneCheckItemList,
     deleteCheckItemList,
     loadCheckItems,
+    loadCheckItemListSelect,
     editCheckItem,
     cloneCheckItem,
     deleteCheckItem

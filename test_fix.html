@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修复验证页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1E3A8A; }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+        .status.success {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+        .status.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .status.info {
+            background: #e3f2fd;
+            border-left-color: #2196F3;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        button.success {
+            background: #4CAF50;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        .demo-header {
+            background: #1E3A8A;
+            color: white;
+            padding: 15px 30px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .console-output {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .console-line {
+            margin: 2px 0;
+            padding: 2px 0;
+        }
+        .console-line.info { color: #87ceeb; }
+        .console-line.success { color: #90ee90; }
+        .console-line.error { color: #ff6b6b; }
+        .step {
+            background: #f9f9f9;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 3px solid #2196F3;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 用户显示问题修复验证</h1>
+
+        <!-- 模拟 Dashboard 头部 -->
+        <div class="demo-header">
+            <div>
+                <strong>运行环境检查系统 - 修复验证</strong>
+            </div>
+            <div>
+                <span id="currentUser">用户: -</span>
+                <button onclick="logout()" style="margin-left: 15px;">退出</button>
+            </div>
+        </div>
+
+        <!-- 步骤 1 -->
+        <div class="step">
+            <h3>步骤 1: 检查当前状态</h3>
+            <button onclick="checkStatus()">检查状态</button>
+            <div id="statusOutput"></div>
+        </div>
+
+        <!-- 步骤 2 -->
+        <div class="step">
+            <h3>步骤 2: 修复登录状态</h3>
+            <input type="text" id="username" placeholder="用户名" value="admin" style="padding: 8px; margin-right: 5px;">
+            <input type="password" id="password" placeholder="密码" value="admin123" style="padding: 8px; margin-right: 5px;">
+            <button onclick="performLogin()" class="success">登录</button>
+            <button onclick="clearData()" class="danger">清除数据</button>
+            <div id="loginOutput"></div>
+        </div>
+
+        <!-- 步骤 3 -->
+        <div class="step">
+            <h3>步骤 3: 验证用户显示</h3>
+            <button onclick="verifyUserDisplay()">验证显示</button>
+            <button onclick="manualFix()">手动修复</button>
+            <div id="displayOutput"></div>
+        </div>
+
+        <!-- 步骤 4 -->
+        <div class="step">
+            <h3>步骤 4: 跳转到真实 Dashboard</h3>
+            <button onclick="goToDashboard()" class="success">跳转到 Dashboard</button>
+            <p style="color: #666; font-size: 14px; margin-top: 10px;">
+                💡 确认所有步骤都成功后再跳转
+            </p>
+        </div>
+
+        <!-- 控制台输出 -->
+        <div class="step">
+            <h3>调试控制台</h3>
+            <button onclick="clearConsole()">清空控制台</button>
+            <div id="consoleOutput" class="console-output"></div>
+        </div>
+    </div>
+
+    <script>
+        // 用户显示自动修复脚本 (与 dashboard.html 中相同)
+        (function() {
+            console.log('🔧 初始化用户显示...');
+
+            function updateUserDisplay() {
+                const username = localStorage.getItem('username');
+                const currentUserEl = document.getElementById('currentUser');
+
+                if (currentUserEl) {
+                    if (username) {
+                        currentUserEl.textContent = '用户: ' + username;
+                        console.log('✅ 用户显示已更新:', username);
+                    } else {
+                        currentUserEl.textContent = '用户: 未知';
+                        console.log('⚠️  未找到用户名');
+                    }
+                } else {
+                    console.error('❌ currentUser 元素不存在');
+                }
+            }
+
+            // 页面加载时立即更新
+            updateUserDisplay();
+
+            // DOM 加载完成后再次确认
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', updateUserDisplay);
+            }
+
+            // 监听 localStorage 变化
+            window.addEventListener('storage', function(e) {
+                if (e.key === 'username' || e.key === 'token') {
+                    updateUserDisplay();
+                }
+            });
+
+            // 导出到全局
+            window.updateUserDisplay = updateUserDisplay;
+        })();
+
+        // 辅助函数
+        function showStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function log(message, type = 'info') {
+            const console = document.getElementById('consoleOutput');
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] ${message}`;
+            console.insertBefore(line, console.firstChild);
+        }
+
+        function clearConsole() {
+            document.getElementById('consoleOutput').innerHTML = '';
+        }
+
+        // 检查状态
+        function checkStatus() {
+            log('=== 检查当前状态 ===', 'info');
+
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            let message = '<strong>当前状态:</strong><br>';
+            message += `Token: ${token ? '✅ 存在' : '❌ 不存在'}<br>`;
+            message += `Username: ${username ? '✅ ' + username : '❌ 不存在'}`;
+
+            showStatus('statusOutput', message, token && username ? 'success' : 'error');
+            log(`Token: ${token ? '存在' : '不存在'}`, token ? 'success' : 'error');
+            log(`Username: ${username || '不存在'}`, username ? 'success' : 'error');
+        }
+
+        // 执行登录
+        async function performLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            log(`=== 尝试登录: ${username} ===`, 'info');
+
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+
+                const response = await fetch('/api/v1/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: formData
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('token', data.access_token);
+                    localStorage.setItem('username', username);
+
+                    log('✅ 登录成功!', 'success');
+                    log(`Token: ${data.access_token.substring(0, 20)}...`, 'success');
+
+                    showStatus('loginOutput',
+                        `✅ 登录成功!<br>用户: ${username}<br>Token: ${data.access_token.substring(0, 20)}...`,
+                        'success'
+                    );
+
+                    // 自动更新显示
+                    setTimeout(() => verifyUserDisplay(), 500);
+                } else {
+                    const error = await response.json();
+                    log(`❌ 登录失败: ${error.detail}`, 'error');
+                    showStatus('loginOutput', `❌ 登录失败: ${error.detail}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 登录异常: ${error.message}`, 'error');
+                showStatus('loginOutput', `❌ 登录异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 清除数据
+        function clearData() {
+            log('=== 清除登录数据 ===', 'info');
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+
+            // 重置显示
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                currentUserEl.textContent = '用户: -';
+            }
+
+            log('✅ 数据已清除', 'success');
+            showStatus('loginOutput', '✅ 数据已清除', 'success');
+        }
+
+        // 验证用户显示
+        function verifyUserDisplay() {
+            log('=== 验证用户显示 ===', 'info');
+
+            const currentUserEl = document.getElementById('currentUser');
+            const username = localStorage.getItem('username');
+
+            if (!currentUserEl) {
+                log('❌ currentUser 元素不存在', 'error');
+                showStatus('displayOutput', '❌ currentUser 元素不存在', 'error');
+                return;
+            }
+
+            const currentText = currentUserEl.textContent;
+            log(`当前显示: "${currentText}"`, 'info');
+
+            if (username) {
+                const expectedText = '用户: ' + username;
+                if (currentText === expectedText) {
+                    log('✅ 用户显示正确!', 'success');
+                    showStatus('displayOutput',
+                        `✅ 用户显示正确!<br>显示内容: "${currentText}"`,
+                        'success'
+                    );
+                } else {
+                    log('⚠️  用户显示不匹配', 'error');
+                    showStatus('displayOutput',
+                        `⚠️  显示不匹配<br>当前: "${currentText}"<br>期望: "${expectedText}"`,
+                        'error'
+                    );
+                }
+            } else {
+                log('⚠️  未找到用户名', 'error');
+                showStatus('displayOutput', '⚠️  未找到用户名，请先登录', 'error');
+            }
+        }
+
+        // 手动修复
+        function manualFix() {
+            log('=== 手动修复用户显示 ===', 'info');
+
+            if (window.updateUserDisplay) {
+                window.updateUserDisplay();
+                log('✅ 已调用修复函数', 'success');
+                setTimeout(verifyUserDisplay, 100);
+            } else {
+                log('❌ 修复函数不存在', 'error');
+            }
+        }
+
+        // 跳转到 Dashboard
+        function goToDashboard() {
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            if (!token || !username) {
+                alert('⚠️  请先完成登录!');
+                return;
+            }
+
+            log('=== 准备跳转到 Dashboard ===', 'info');
+            log(`当前用户: ${username}`, 'success');
+            log(`Token: ${token.substring(0, 20)}...`, 'success');
+
+            if (confirm(`✅ 确认跳转到 Dashboard?\n\n当前用户: ${username}\n\n确保所有步骤都已完成!`)) {
+                log('🚀 正在跳转...', 'success');
+                window.location.href = '/dashboard.html';
+            }
+        }
+
+        // 退出登录
+        function logout() {
+            log('=== 退出登录 ===', 'info');
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                currentUserEl.textContent = '用户: -';
+            }
+
+            log('✅ 已退出登录', 'success');
+            alert('✅ 已退出登录');
+            checkStatus();
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            log('📋 页面加载完成', 'info');
+            checkStatus();
+        });
+    </script>
+</body>
+</html>

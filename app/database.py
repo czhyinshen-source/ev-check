@@ -1,6 +1,8 @@
 # 数据库连接配置
+import hashlib
 from typing import AsyncGenerator
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -45,7 +47,27 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             await session.close()
 
 
+def hash_password(password: str) -> str:
+    """密码哈希"""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+
 async def init_db():
     """初始化数据库表"""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # 创建默认管理员用户
+    async with async_session_maker() as session:
+        from app.models import User
+        result = await session.execute(select(User).where(User.username == "admin"))
+        if not result.scalar_one_or_none():
+            admin = User(
+                username="admin",
+                password_hash=hash_password("admin123"),
+                role="admin",
+                is_active=True,
+            )
+            session.add(admin)
+            await session.commit()
+            print("✅ 默认管理员用户已创建 (admin/admin123)")

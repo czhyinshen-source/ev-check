@@ -18,4 +18,5 @@ celery_app.conf.update(
     beat_schedule={},
 )
 
-celery_app.autodiscover_tasks(["app.tasks"])
+# 导入任务模块以注册任务
+from app.tasks import snapshot_build_tasks  # noqa: E402

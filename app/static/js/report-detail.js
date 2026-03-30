@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', function() {
 async function loadReportDetail() {
     try {
         const res = await fetch(`${API_BASE}/api/v1/checks/${resultId}`, {
-            headers: getHeaders()
+            headers: window.shared.getHeaders()
         });
 
         if (!res.ok) {
@@ -325,14 +325,8 @@ function exportPDF() {
     });
 }
 
-// 工具函数
-function getHeaders() {
-    const token = localStorage.getItem('token');
-    return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-    };
-}
+// 注意: getHeaders 已在 shared.js 中定义，使用 window.shared.getHeaders()
+// 这里移除重复的 getHeaders 函数声明
 
 function formatDuration(seconds) {
     if (!seconds) return '-';

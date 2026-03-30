@@ -1,4 +1,5 @@
 # 快照构建进度追踪器
+import asyncio
 import json
 from typing import Optional, Dict, Any
 
@@ -14,13 +15,22 @@ class SnapshotBuildProgressTracker:
     def __init__(self):
         self._redis: Optional[redis.Redis] = None
 
-    async def _get_redis(self) -> redis.Redis:
+    async def _get_redis(self) -> Optional[redis.Redis]:
         if self._redis is None:
-            self._redis = redis.from_url(
-                settings.REDIS_URL,
-                encoding="utf-8",
-                decode_responses=True
-            )
+            try:
+                self._redis = redis.from_url(
+                    settings.REDIS_URL,
+                    encoding="utf-8",
+                    decode_responses=True,
+                    socket_connect_timeout=3,  # 3秒连接超时
+                    socket_timeout=3,          # 3秒操作超时
+                )
+                # 测试连接
+                await asyncio.wait_for(self._redis.ping(), timeout=3)
+            except Exception as e:
+                print(f"警告: Redis 连接失败 - {e}")
+                self._redis = None
+                return None
         return self._redis
 
     def _key(self, task_id: int, suffix: str = "") -> str:
@@ -35,6 +45,8 @@ class SnapshotBuildProgressTracker:
     ) -> None:
         """设置初始进度"""
         r = await self._get_redis()
+        if r is None:
+            return  # Redis 不可用时静默跳过
         data = {
             "task_id": task_id,
             "status": "pending",
@@ -58,6 +70,8 @@ class SnapshotBuildProgressTracker:
     ) -> None:
         """更新进度"""
         r = await self._get_redis()
+        if r is None:
+            return  # Redis 不可用时静默跳过
         data_str = await r.get(self._key(task_id))
         if data_str:
             data = json.loads(data_str)
@@ -86,6 +100,8 @@ class SnapshotBuildProgressTracker:
     ) -> None:
         """更新组状态"""
         r = await self._get_redis()
+        if r is None:
+            return  # Redis 不可用时静默跳过
         data_str = await r.get(self._key(task_id))
         if data_str:
             data = json.loads(data_str)

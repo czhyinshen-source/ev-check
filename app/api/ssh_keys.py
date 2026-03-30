@@ -32,7 +32,9 @@ async def list_ssh_keys(
         {
             "id": k.id,
             "name": k.name,
+            "key_type": getattr(k, 'key_type', 'rsa') or 'rsa',
             "public_key": k.public_key,
+            "has_private_key": k.private_key is not None and k.private_key != "",
             "is_active": k.is_active,
             "description": k.description,
             "created_at": k.created_at.isoformat(),
@@ -40,6 +42,31 @@ async def list_ssh_keys(
         }
         for k in keys
     ]
+
+
+@router.get("/keys/{key_id}")
+async def get_ssh_key(
+    key_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取单个 SSH 密钥详情"""
+    result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))
+    key = result.scalar_one_or_none()
+    if not key:
+        raise HTTPException(status_code=404, detail="SSH 密钥不存在")
+
+    return {
+        "id": key.id,
+        "name": key.name,
+        "key_type": getattr(key, 'key_type', 'rsa') or 'rsa',
+        "public_key": key.public_key,
+        "has_private_key": key.private_key is not None and key.private_key != "",
+        "is_active": key.is_active,
+        "description": key.description,
+        "created_at": key.created_at.isoformat(),
+        "updated_at": key.updated_at.isoformat(),
+    }
 
 
 @router.post("/keys", status_code=status.HTTP_201_CREATED)

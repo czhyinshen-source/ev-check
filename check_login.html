@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>登录流程检查</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .step {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        .step.success {
+            border-left-color: #4CAF50;
+            background: #e8f5e9;
+        }
+        .step.error {
+            border-left-color: #f44336;
+            background: #ffebee;
+        }
+        button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 5px;
+        }
+    </style>
+</head>
+<body>
+    <h1>登录流程完整检查</h1>
+
+    <div class="step">
+        <h3>步骤 1: 检查当前状态</h3>
+        <button onclick="checkCurrentState()">检查当前状态</button>
+        <div id="currentState"></div>
+    </div>
+
+    <div class="step">
+        <h3>步骤 2: 执行登录</h3>
+        <input type="text" id="username" placeholder="用户名" value="admin">
+        <input type="password" id="password" placeholder="密码" value="admin123">
+        <button onclick="performLogin()">登录</button>
+        <div id="loginResult"></div>
+    </div>
+
+    <div class="step">
+        <h3>步骤 3: 验证存储</h3>
+        <button onclick="verifyStorage()">验证存储</button>
+        <div id="storageResult"></div>
+    </div>
+
+    <div class="step">
+        <h3>步骤 4: 测试 API</h3>
+        <button onclick="testAPI()">测试当前用户 API</button>
+        <div id="apiResult"></div>
+    </div>
+
+    <div class="step">
+        <h3>步骤 5: 跳转到 Dashboard</h3>
+        <button onclick="goToDashboard()">跳转到 Dashboard</button>
+    </div>
+
+    <script>
+        function showResult(elementId, message, isSuccess = true) {
+            const element = document.getElementById(elementId);
+            element.className = isSuccess ? 'step success' : 'step error';
+            element.innerHTML = `<p>${message}</p>`;
+        }
+
+        function checkCurrentState() {
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            let message = '<strong>当前状态:</strong><br>';
+            message += `Token: ${token ? '✅ 存在' : '❌ 不存在'}<br>`;
+            message += `Username: ${username ? '✅ ' + username : '❌ 不存在'}`;
+
+            showResult('currentState', message, token && username);
+        }
+
+        async function performLogin() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            if (!username || !password) {
+                showResult('loginResult', '❌ 请输入用户名和密码', false);
+                return;
+            }
+
+            try {
+                // 模拟 login.html 的登录逻辑
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+
+                const response = await fetch('/api/v1/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // 存储到 localStorage
+                    localStorage.setItem('token', data.access_token);
+                    localStorage.setItem('username', username);
+
+                    showResult('loginResult',
+                        `✅ 登录成功!<br>Token: ${data.access_token.substring(0, 20)}...<br>Username: ${username}`,
+                        true
+                    );
+
+                    // 自动验证存储
+                    setTimeout(verifyStorage, 500);
+                } else {
+                    showResult('loginResult',
+                        `❌ 登录失败: ${data.detail || '未知错误'}`,
+                        false
+                    );
+                }
+            } catch (error) {
+                showResult('loginResult',
+                    `❌ 请求异常: ${error.message}`,
+                    false
+                );
+            }
+        }
+
+        function verifyStorage() {
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            let message = '<strong>存储验证:</strong><br>';
+
+            if (token) {
+                message += `✅ Token 已存储: ${token.substring(0, 20)}...<br>`;
+            } else {
+                message += `❌ Token 未存储<br>`;
+            }
+
+            if (username) {
+                message += `✅ Username 已存储: ${username}<br>`;
+            } else {
+                message += `❌ Username 未存储<br>`;
+            }
+
+            // 验证是否能读取
+            const testRead = localStorage.getItem('username');
+            message += `✅ 读取测试: ${testRead || '失败'}`;
+
+            showResult('storageResult', message, token && username);
+        }
+
+        async function testAPI() {
+            const token = localStorage.getItem('token');
+
+            if (!token) {
+                showResult('apiResult', '❌ 没有找到 token，请先登录', false);
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/v1/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const user = await response.json();
+                    showResult('apiResult',
+                        `✅ API 调用成功!<br>用户信息: ${JSON.stringify(user, null, 2)}`,
+                        true
+                    );
+                } else {
+                    const error = await response.json();
+                    showResult('apiResult',
+                        `❌ API 调用失败: ${JSON.stringify(error)}`,
+                        false
+                    );
+                }
+            } catch (error) {
+                showResult('apiResult',
+                    `❌ 请求异常: ${error.message}`,
+                    false
+                );
+            }
+        }
+
+        function goToDashboard() {
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            if (!token || !username) {
+                alert('请先完成登录流程');
+                return;
+            }
+
+            console.log('准备跳转到 Dashboard...');
+            console.log('Token:', token.substring(0, 20) + '...');
+            console.log('Username:', username);
+
+            if (confirm(`确认跳转到 Dashboard?\n当前用户: ${username}`)) {
+                window.location.href = '/dashboard.html';
+            }
+        }
+
+        // 页面加载时自动检查状态
+        window.addEventListener('load', () => {
+            console.log('页面加载完成');
+            checkCurrentState();
+        });
+    </script>
+</body>
+</html>

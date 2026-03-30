@@ -1,766 +1,679 @@
-        const API_BASE = '';
-        let token = localStorage.getItem('token');
-        let currentSnapshotGroupId = '';
+// Dashboard 主模块
+// 注意: getHeaders 和 API_BASE 已在 shared.js 中定义
 
-        if (!token) window.location.href = '/login.html';
-        document.getElementById('currentUser').textContent = '用户: ' + (localStorage.getItem('username') || '未知');
+// 安全获取DOM元素
+function safeGet(id) {
+    return document.getElementById(id);
+}
 
-        // logout 和 getHeaders 在 shared.js 中定义
-        const { getHeaders, logout, closeModal } = window.shared;
-        
-        document.querySelectorAll('.nav-tab').forEach(tab => {
-            tab.addEventListener('click', () => {
-                document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById(tab.dataset.tab).classList.add('active');
-            });
-        });
-        
-        async function refreshData() {
-            await Promise.all([
-                window.communications.loadCommunications(),
-                loadCheckItemLists(),
-                loadCheckItems(),
-                window.snapshots.loadSnapshots(),
-                window.checks?.loadCheckResults?.() || Promise.resolve(),
-                window.reports?.loadReports?.() || Promise.resolve(),
-                loadStats(),
-                window.communications.loadGroups()
-            ]);
-        }
-        
-        async function loadStats() {
-            try {
-                const [commRes, itemRes, snapRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() }),
-                    fetch(`${API_BASE}/api/v1/check-items`, { headers: getHeaders() }),
-                    fetch(`${API_BASE}/api/v1/snapshots`, { headers: getHeaders() })
-                ]);
-                const comms = await commRes.json();
-                const items = await itemRes.json();
-                const snaps = await snapRes.json();
-                
-                const commCountEl = document.getElementById('commCount');
-                const checkItemCountEl = document.getElementById('checkItemCount');
-                const snapshotCountEl = document.getElementById('snapshotCount');
-                
-                if (commCountEl) commCountEl.textContent = comms.length;
-                if (checkItemCountEl) checkItemCountEl.textContent = items.length;
-                if (snapshotCountEl) snapshotCountEl.textContent = snaps.length;
-            } catch (e) { console.error(e); }
-        }
+// 安全获取元素值
+function safeVal(id, defaultVal = '') {
+    const el = safeGet(id);
+    return el ? (el.value || defaultVal) : defaultVal;
+}
 
-        // loadGroups, filterByGroup, loadCommunications, searchCommunications 在 communications.js 中定义
+// 初始化 Dashboard（防重复调用）
+let dashboardInitialized = false;
+function initializeDashboard() {
+    if (dashboardInitialized) {
+        console.log('⚠️  Dashboard 已初始化，跳过重复调用');
+        return;
+    }
+    dashboardInitialized = true;
+    console.log('🚀 初始化 Dashboard...');
 
-          // loadCheckResults 和 loadCurrentTask 在 checks.js 中定义
+    const token = localStorage.getItem('token');
+    if (!token) {
+        console.warn('⚠️  未找到token，重定向到登录页面');
+        window.location.href = '/login.html';
+        return;
+    }
 
-        async function loadSSHKeys() {
-            try {
-                const res = await fetch(`${API_BASE}/api/v1/keys`, { headers: getHeaders() });
-                const data = await res.json();
-                const tbody = document.getElementById('sshKeyTable');
-                tbody.innerHTML = data.map(k => `
-                    <tr>
-                        <td>${k.id}</td>
-                        <td>${k.name}</td>
-                        <td><code style="font-size:11px">${k.public_key ? k.public_key.substring(0, 50) + '...' : '-'}</code></td>
-                        <td><span class="status-badge ${k.is_active ? 'success' : 'error'}">${k.is_active ? '启用' : '禁用'}</span></td>
-                        <td>${new Date(k.created_at).toLocaleString()}</td>
-                        <td><button class="btn btn-danger btn-sm" onclick="deleteSSHKey(${k.id})">删除</button></td>
-                    </tr>
-                `).join('');
-            } catch (e) { console.error(e); }
-        }
-        
-  // loadGroupOptions, loadSSHKeysForSelect, toggleAuthFields 在 communications.js 中定义
+    console.log('✅ Token 验证通过');
 
-                }
+    // 初始化标签页切换
+    initializeTabs();
 
-                const deployResponse = await fetch(`${API_BASE}/api/v1/deploy-ssh-key`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({
-                        communication_id: commData.id || id,
-                        ssh_key_id: privateKeyEl.value,
-                        password: deployPassword
-                    })
-                });
+    // 绑定表单事件
+    bindFormEvents();
 
-                const deployResult = await deployResponse.json();
-                if (deployResult.status === 'error') {
-                    alert('公钥部署失败: ' + deployResult.message);
-                    return;
-                } else {
-                    alert('公钥部署成功！');
-                }
-            }
+    // 加载初始数据
+    refreshData();
+}
 
-            closeModal('commModal');
-            window.communications.loadCommunications();
-        });
+function initializeTabs() {
+    console.log('🔧 初始化标签页切换...');
+    const tabs = document.querySelectorAll('.nav-tab');
+    console.log(`找到 ${tabs.length} 个标签页`);
 
-        // openExcelImportModal, toggleDeployFields, openBatchDeployModal 在 communications.js 中定义
+    tabs.forEach(tab => {
+        const tabClone = tab.cloneNode(true);
+        tab.parentNode.replaceChild(tabClone, tab);
 
-        // 处理 Excel 导入表单提交
-        document.getElementById('excelImportForm').addEventListener('submit', async (e) => {
+        tabClone.addEventListener('click', (e) => {
             e.preventDefault();
-            console.log('Excel导入表单提交开始');
-            
-            const fileInput = document.getElementById('excelFile');
-            const deployPublicKey = document.getElementById('deployPublicKey').checked;
-            const sshKeyId = document.getElementById('excelSshKey').value;
-            const deployPassword = document.getElementById('deployPassword').value;
+            const targetTab = e.currentTarget;
+            const targetId = targetTab.dataset.tab;
 
-            console.log('文件选择:', fileInput.files.length > 0 ? '已选择' : '未选择');
-            console.log('部署公钥:', deployPublicKey);
-            console.log('SSH密钥ID:', sshKeyId);
-            console.log('部署密码:', deployPassword ? '已输入' : '未输入');
+            console.log(`切换到标签页: ${targetId}`);
 
-            if (!fileInput.files.length) {
-                alert('请选择 Excel 文件');
-                return;
-            }
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
-            if (deployPublicKey && (!sshKeyId || !deployPassword)) {
-                alert('请选择 SSH 密钥并输入部署密码');
-                return;
-            }
+            targetTab.classList.add('active');
+            const targetContent = document.getElementById(targetId);
+            if (targetContent) {
+                targetContent.classList.add('active');
+                console.log(`✅ 成功切换到: ${targetId}`);
 
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            formData.append('deploy_public_key', deployPublicKey);
-            if (deployPublicKey) {
-                formData.append('ssh_key_id', sshKeyId);
-                formData.append('deploy_password', deployPassword);
-            }
-
-            console.log('FormData准备完成，开始发送请求');
-
-            try {
-                console.log('API地址:', `${API_BASE}/api/v1/communications/import-excel`);
-                console.log('Token:', localStorage.getItem('token') ? '已存在' : '不存在');
-                
-                const response = await fetch(`${API_BASE}/api/v1/communications/import-excel`, {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    },
-                    body: formData
-                });
-                
-                console.log('响应状态:', response.status);
-                
-                const result = await response.json();
-                console.log('响应数据:', result);
-                
-                if (response.ok) {
-                    alert(`✅ 导入成功！导入 ${result.imported} 台通信机`);
-                    if (deployPublicKey && result.deployment) {
-                        alert(`✅ 公钥部署结果：成功 ${result.deployment.success.length} 台，失败 ${result.deployment.failed.length} 台`);
-                    }
-                    closeModal('excelImportModal');
-                    window.communications.loadCommunications();
-                } else {
-                    alert(`❌ 导入失败：${result.detail || '未知错误'}`);
+                // 切换到 SSH 密钥标签页时加载密钥列表
+                if (targetId === 'ssh-keys' && window.sshKeys?.loadSSHKeys) {
+                    window.sshKeys.loadSSHKeys();
                 }
-            } catch (e) {
-                console.error('导入失败:', e);
-                alert('❌ 导入失败，请重试');
-            }
-        });
-
-        // 处理批量部署公钥表单提交
-        document.getElementById('batchDeployForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const sshKeyId = document.getElementById('batchSshKey').value;
-            const deployPassword = document.getElementById('batchDeployPassword').value;
-            const checkboxes = document.querySelectorAll('input[name="commId"]:checked');
-            const commIds = Array.from(checkboxes).map(cb => cb.value);
-
-            if (!sshKeyId) {
-                alert('请选择 SSH 密钥');
-                return;
-            }
-
-            if (!deployPassword) {
-                alert('请输入部署密码');
-                return;
-            }
-
-            if (commIds.length === 0) {
-                alert('请选择至少一台通信机');
-                return;
-            }
-
-            try {
-                const response = await fetch(`${API_BASE}/api/v1/communications/batch-deploy-ssh-key`, {
-                    method: 'POST',
-                    headers: getHeaders(),
-                    body: JSON.stringify({
-                        communication_ids: commIds,
-                        ssh_key_id: sshKeyId,
-                        password: deployPassword
-                    })
-                });
-                
-                const result = await response.json();
-                if (response.ok) {
-                    alert(`✅ 批量部署完成！成功 ${result.success.length} 台，失败 ${result.failed.length} 台`);
-                    closeModal('batchDeployModal');
-                } else {
-                    alert(`❌ 部署失败：${result.detail || '未知错误'}`);
-                }
-            } catch (e) {
-                console.error('部署失败:', e);
-                alert('❌ 部署失败，请重试');
-            }
-        });
-
-        // downloadExcelTemplate, testConnection, checkAllCommunicationStatuses 在 communications.js 中定义
-
-        function openSSHKeyModal() {
-            document.getElementById('sshKeyModal').classList.add('active');
-        }
-        
-        document.getElementById('sshKeyForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = {
-                name: document.getElementById('sshKeyName').value,
-                key_type: document.getElementById('sshKeyType').value,
-                key_size: parseInt(document.getElementById('sshKeySize').value),
-                passphrase: document.getElementById('sshKeyPassphrase').value || null,
-                description: document.getElementById('sshKeyDesc').value || null
-            };
-            const res = await fetch(`${API_BASE}/api/v1/keys/generate`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            const result = await res.json();
-            if (res.ok) {
-                alert('✅ 密钥生成成功！\n公钥: ' + result.public_key);
-                closeModal('sshKeyModal');
-                loadSSHKeys();
             } else {
-                alert('❌ 生成失败: ' + result.detail);
+                console.error(`❌ 未找到内容区域: ${targetId}`);
             }
         });
-        
-        async function deleteSSHKey(id) {
-            if (!confirm('确定删除?')) return;
-            await fetch(`${API_BASE}/api/v1/keys/${id}`, { method: 'DELETE', headers: getHeaders() });
-            loadSSHKeys();
-        }
-        
-        function openGroupModal() {
-            document.getElementById('groupModal').classList.add('active');
-        }
-        
-        document.getElementById('groupForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const data = {
-                name: document.getElementById('groupName').value,
-                description: document.getElementById('groupDesc').value || null
-            };
-            await fetch(`${API_BASE}/api/v1/communications/groups`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            closeModal('groupModal');
-            loadGroups();
-            loadGroupOptions();
-        });
-        
-        document.getElementById('checkItemForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('checkItemId').value;
+    });
 
-            // 获取检查项分类
-            const category = document.getElementById('checkItemCategory').value;
+    console.log('✅ 标签页切换初始化完成');
+}
+
+// 绑定表单事件
+function bindFormEvents() {
+    console.log('🔧 绑定表单事件...');
+
+    // 通信机表单
+    const commForm = safeGet('commForm');
+    if (commForm) {
+        commForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = safeVal('commId');
+            const name = safeVal('commName');
+            const ip = safeVal('commIp');
+            const port = parseInt(safeVal('commPort', '22')) || 22;
+            const username = safeVal('commUsername');
+            const authMethod = safeVal('commAuthType', 'password');
+            const password = safeVal('commPassword');
+            const groupId = parseInt(safeVal('commGroup')) || null;
+            const privateKeyEl = safeGet('commPrivateKey');
+            const deployPublicKey = safeGet('deployPublicKey')?.checked || false;
+            const deployPassword = safeVal('deployPassword');
+
+            if (!name || !ip) {
+                alert('请填写必填字段（名称和IP地址）');
+                return;
+            }
+
+            const commData = {
+                name,
+                ip_address: ip,
+                port,
+                username,
+                group_id: groupId,
+                auth_method: authMethod
+            };
+
+            if (authMethod === 'password') {
+                commData.password = password;
+            } else {
+                // 存储SSH密钥ID到 private_key_path 字段
+                commData.private_key_path = privateKeyEl?.value ? `key_${privateKeyEl.value}` : null;
+            }
+
+            try {
+                if (deployPublicKey && privateKeyEl?.value) {
+                    const deployResponse = await fetch(`${window.shared.API_BASE}/api/v1/deploy-ssh-key`, {
+                        method: 'POST',
+                        headers: window.shared.getHeaders(),
+                        body: JSON.stringify({
+                            communication_id: id || undefined,
+                            ssh_key_id: privateKeyEl.value,
+                            password: deployPassword
+                        })
+                    });
+
+                    const deployResult = await deployResponse.json();
+                    if (deployResult.status === 'error') {
+                        alert('公钥部署失败: ' + deployResult.message);
+                        return;
+                    } else {
+                        alert('公钥部署成功！');
+                    }
+                }
+
+                const method = id ? 'PUT' : 'POST';
+                const url = id ? `${window.shared.API_BASE}/api/v1/communications/${id}` : `${window.shared.API_BASE}/api/v1/communications`;
+
+                const response = await fetch(url, {
+                    method,
+                    headers: window.shared.getHeaders(),
+                    body: JSON.stringify(commData)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    if (response.status === 422) {
+                        alert('❌ 输入数据有误，请检查后重试');
+                    } else {
+                        alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    }
+                    return;
+                }
+
+                window.shared.closeModal('commModal');
+                if (window.communications?.loadCommunications) {
+                    window.communications.loadCommunications();
+                }
+                alert(id ? '✅ 通信机更新成功' : '✅ 通信机创建成功');
+            } catch (e) {
+                console.error(e);
+                alert('❌ 网络错误');
+            }
+        });
+    }
+
+    // 分组表单
+    const groupForm = safeGet('groupForm');
+    if (groupForm) {
+        groupForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = safeVal('groupId');
+            const name = safeVal('groupName');
+            const parentId = safeVal('groupParentId');
+            const sortOrder = parseInt(safeVal('groupSortOrder', '0')) || 0;
+            const description = safeVal('groupDesc');
+
+            if (!name) {
+                alert('请填写分组名称');
+                return;
+            }
+
+            const groupData = {
+                name,
+                parent_id: parentId ? parseInt(parentId) : null,
+                sort_order: sortOrder,
+                description: description || null
+            };
+
+            try {
+                const method = id ? 'PUT' : 'POST';
+                const url = id ? `${window.shared.API_BASE}/api/v1/communications/groups/${id}` : `${window.shared.API_BASE}/api/v1/communications/groups`;
+
+                const response = await fetch(url, {
+                    method,
+                    headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(groupData)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    return;
+                }
+
+                window.shared.closeModal('groupModal');
+                if (window.communications?.loadGroups) {
+                    window.communications.loadGroups();
+                }
+                alert(id ? '✅ 分组更新成功' : '✅ 分组创建成功');
+            } catch (e) {
+                console.error(e);
+                alert('❌ 网络错误');
+            }
+        });
+    }
+
+    // 批量部署公钥表单
+    const batchDeployForm = safeGet('batchDeployForm');
+    if (batchDeployForm) {
+        batchDeployForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // 调用 communications 模块的批量部署函数
+            if (window.communications?.batchDeploySSHKey) {
+                await window.communications.batchDeploySSHKey();
+            } else {
+                alert('批量部署功能未加载');
+            }
+        });
+    }
+
+    // SSH 密钥表单
+    const sshKeyForm = safeGet('sshKeyForm');
+    if (sshKeyForm) {
+        sshKeyForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = safeVal('sshKeyName');
+            const keyType = safeVal('sshKeyType');
+            const keySize = safeVal('sshKeySize');
+            const passphrase = safeVal('sshKeyPassphrase');
+            const description = safeVal('sshKeyDesc');
+
+            if (!name) {
+                alert('请填写密钥名称');
+                return;
+            }
+
+            try {
+                // 调用 /keys/generate 端点生成密钥对
+                const response = await fetch(`${window.shared.API_BASE}/api/v1/keys/generate`, {
+                    method: 'POST',
+                    headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        key_type: keyType,
+                        key_size: parseInt(keySize),
+                        passphrase: passphrase || null,
+                        description: description || null
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('❌ 生成密钥失败: ' + (error.detail || '未知错误'));
+                    return;
+                }
+
+                const result = await response.json();
+                window.shared.closeModal('sshKeyModal');
+                if (window.sshKeys?.loadSSHKeys) {
+                    window.sshKeys.loadSSHKeys();
+                }
+                alert(`✅ SSH 密钥生成成功！\n\n公钥:\n${result.public_key}\n\n请复制公钥并部署到目标服务器的 ~/.ssh/authorized_keys 文件中。`);
+            } catch (e) {
+                console.error(e);
+                alert('❌ 网络错误');
+            }
+        });
+    }
+
+    // 检查项列表表单
+    const checkItemListForm = safeGet('checkItemListForm');
+    if (checkItemListForm) {
+        checkItemListForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = safeVal('checkItemListId');
+            const name = safeVal('checkItemListName');
+            const description = safeVal('checkItemListDesc');
+
+            if (!name) {
+                alert('请填写检查项列表名称');
+                return;
+            }
+
+            try {
+                const method = id ? 'PUT' : 'POST';
+                const url = id ? `${window.shared.API_BASE}/api/v1/check-items/lists/${id}` : `${window.shared.API_BASE}/api/v1/check-items/lists`;
+
+                const response = await fetch(url, {
+                    method,
+                    headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description: description || null })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    return;
+                }
+
+                window.shared.closeModal('checkItemListModal');
+                if (window.checkitems?.loadCheckItemLists) {
+                    window.checkitems.loadCheckItemLists();
+                }
+                alert(id ? '✅ 检查项列表更新成功' : '✅ 检查项列表创建成功');
+            } catch (e) {
+                console.error(e);
+                alert('❌ 网络错误');
+            }
+        });
+    }
+
+    // 检查项表单
+    const checkItemForm = safeGet('checkItemForm');
+    if (checkItemForm) {
+        checkItemForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const id = safeVal('checkItemId');
+            const name = safeVal('checkItemName');
+            const category = safeVal('checkItemCategory');
+            const description = safeVal('checkItemDesc');
+            const listId = safeVal('checkItemListSelect') || null;
+
+            if (!name) {
+                alert('请填写检查项名称');
+                return;
+            }
+
             if (!category) {
                 alert('请选择检查项分类');
                 return;
             }
 
-            let checkType = [];
-            let targetPath = '';
-            let checkAttributes = {};
+            // 根据分类构建检查类型和属性
+            let type = '';
+            let target_path = '';
+            let check_attributes = {};
 
-            // 根据分类构建检查项数据
             if (category === 'file') {
-                // 文件/目录检查
-                targetPath = document.getElementById('filePath').value;
-                if (!targetPath) {
-                    alert('请输入文件/目录路径');
-                    return;
-                }
-
-                checkType = ['file_exists']; // 基础：存在性检查
-
-                // 修改时间检查
-                if (document.getElementById('checkFileMtime').checked) {
-                    checkType.push('file_mtime');
-                    const compareMode = document.getElementById('fileMtimeCompareMode').value;
-                    checkAttributes.mtime = {
-                        compare_mode: compareMode,
-                        start_time: compareMode === 'specified' ? document.getElementById('fileMtimeStart').value : null,
-                        end_time: compareMode === 'specified' ? document.getElementById('fileMtimeEnd').value : null
+                target_path = safeVal('filePath');
+                const types = [];
+                if (safeGet('checkFileMtime')?.checked) {
+                    types.push('file_mtime');
+                    check_attributes.mtime = {
+                        compare_mode: safeVal('fileMtimeCompareMode', 'snapshot'),
+                        start_time: safeVal('fileMtimeStart') || null,
+                        end_time: safeVal('fileMtimeEnd') || null
                     };
                 }
-
-                // 大小检查
-                if (document.getElementById('checkFileSize').checked) {
-                    checkType.push('file_size');
-                    const compareMode = document.getElementById('fileSizeCompareMode').value;
-                    checkAttributes.size = {
-                        compare_mode: compareMode,
-                        min_size: compareMode === 'specified' ? parseInt(document.getElementById('fileSizeMin').value) || 0 : null,
-                        max_size: compareMode === 'specified' ? parseInt(document.getElementById('fileSizeMax').value) || 0 : null
+                if (safeGet('checkFileSize')?.checked) {
+                    types.push('file_size');
+                    check_attributes.size = {
+                        compare_mode: safeVal('fileSizeCompareMode', 'snapshot'),
+                        min_size: safeVal('fileSizeMin') ? parseInt(safeVal('fileSizeMin')) : null,
+                        max_size: safeVal('fileSizeMax') ? parseInt(safeVal('fileSizeMax')) : null
                     };
                 }
-
-                // 属主检查
-                if (document.getElementById('checkFileOwner').checked) {
-                    checkType.push('file_owner');
-                    const compareMode = document.getElementById('fileOwnerCompareMode').value;
-                    checkAttributes.owner = {
-                        compare_mode: compareMode,
-                        owner: compareMode === 'specified' ? document.getElementById('fileOwnerValue').value : null
+                if (safeGet('checkFileOwner')?.checked) {
+                    types.push('file_owner');
+                    check_attributes.owner = {
+                        compare_mode: safeVal('fileOwnerCompareMode', 'snapshot'),
+                        owner: safeVal('fileOwnerValue') || null
                     };
                 }
-
-                // 属组检查
-                if (document.getElementById('checkFileGroup').checked) {
-                    checkType.push('file_group');
-                    const compareMode = document.getElementById('fileGroupCompareMode').value;
-                    checkAttributes.group = {
-                        compare_mode: compareMode,
-                        group: compareMode === 'specified' ? document.getElementById('fileGroupValue').value : null
+                if (safeGet('checkFileGroup')?.checked) {
+                    types.push('file_group');
+                    check_attributes.group = {
+                        compare_mode: safeVal('fileGroupCompareMode', 'snapshot'),
+                        group: safeVal('fileGroupValue') || null
                     };
                 }
-
-                // 权限检查
-                if (document.getElementById('checkFilePermissions').checked) {
-                    checkType.push('file_permissions');
-                    const compareMode = document.getElementById('filePermissionsCompareMode').value;
-                    checkAttributes.permissions = {
-                        compare_mode: compareMode,
-                        permissions: compareMode === 'specified' ? document.getElementById('filePermissionsValue').value : null
+                if (safeGet('checkFilePermissions')?.checked) {
+                    types.push('file_permissions');
+                    check_attributes.permissions = {
+                        compare_mode: safeVal('filePermissionsCompareMode', 'snapshot'),
+                        permissions: safeVal('filePermissionsValue') || null
                     };
                 }
-
-                // MD5检查
-                if (document.getElementById('checkFileMd5').checked) {
-                    checkType.push('file_md5');
-                    const compareMode = document.getElementById('fileMd5CompareMode').value;
-                    checkAttributes.md5 = {
-                        compare_mode: compareMode,
-                        md5_value: compareMode === 'specified' ? document.getElementById('fileMd5Value').value : null
+                if (safeGet('checkFileMd5')?.checked) {
+                    types.push('file_md5');
+                    check_attributes.md5 = {
+                        compare_mode: safeVal('fileMd5CompareMode', 'snapshot'),
+                        md5_value: safeVal('fileMd5Value') || null
                     };
                 }
-
+                // 如果没有任何检查类型，至少添加 file_exists
+                if (types.length === 0) {
+                    types.push('file_exists');
+                }
+                type = types;
             } else if (category === 'content') {
-                // 文件内容检查
-                targetPath = document.getElementById('contentFilePath').value;
-                if (!targetPath) {
-                    alert('请输入文件路径');
-                    return;
-                }
-
-                const fileType = document.getElementById('contentFileType').value;
-
+                target_path = safeVal('contentFilePath');
+                const fileType = safeVal('contentFileType', 'text');
                 if (fileType === 'text') {
-                    // 普通文本文件
-                    checkType = ['file_content'];
-                    const compareMode = document.getElementById('textCompareMode').value;
-                    checkAttributes.content = {
-                        file_type: 'text',
-                        compare_mode: compareMode,
-                        content: (compareMode === 'partial' || compareMode === 'contains' || compareMode === 'not_contains')
-                            ? document.getElementById('textContent').value : null
+                    type = ['file_content'];
+                    check_attributes.content = {
+                        compare_mode: safeVal('textCompareMode', 'full'),
+                        content: safeVal('textContent') || null
                     };
-                } else {
-                    // 内核参数文件
-                    checkType = ['kernel_param'];
-                    const compareMode = document.getElementById('kernelCompareMode').value;
-                    checkAttributes.kernel = {
-                        compare_mode: compareMode,
-                        param_value: compareMode === 'specified' ? document.getElementById('kernelParamValue').value : null
+                } else if (fileType === 'kernel') {
+                    type = ['kernel_param'];
+                    check_attributes.kernel = {
+                        compare_mode: safeVal('kernelCompareMode', 'snapshot'),
+                        param_value: safeVal('kernelParamValue') || null
                     };
                 }
-
             } else if (category === 'route') {
-                // 路由表检查
-                checkType = ['route_table'];
-                targetPath = ''; // 路由表不需要路径
-
-                const mode = document.getElementById('routeTableMode').value;
-                checkAttributes.route = {
-                    mode: mode,
-                    route_rule: mode === 'check' ? document.getElementById('routeRule').value : null
+                target_path = '/proc/net/route';
+                type = ['route_table'];
+                check_attributes.route = {
+                    mode: safeVal('routeTableMode', 'full'),
+                    route_rule: safeVal('routeRule') || null
                 };
             }
 
-            const data = {
-                name: document.getElementById('checkItemName').value,
-                type: checkType,
-                target_path: targetPath,
-                check_attributes: checkAttributes,
-                description: document.getElementById('checkItemDesc').value || null,
-                // 如果当前选中了检查项列表，则关联到该列表
-                list_id: currentCheckItemListId ? parseInt(currentCheckItemListId) : null
-            };
-            const url = id ? `${API_BASE}/api/v1/check-items/${id}` : `${API_BASE}/api/v1/check-items`;
-            const method = id ? 'PUT' : 'POST';
-
-            try {
-                const response = await fetch(url, { method, headers: getHeaders(), body: JSON.stringify(data) });
-                if (!response.ok) {
-                    throw new Error('创建检查项失败');
-                }
-
-                closeModal('checkItemModal');
-                loadCheckItems();
-            } catch (e) {
-                console.error(e);
-                alert('❌ 保存检查项失败，请重试');
+            // 如果 check_attributes 为空，设为 null
+            if (Object.keys(check_attributes).length === 0) {
+                check_attributes = null;
             }
-        });
-        
-        document.getElementById('checkItemListForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const id = document.getElementById('checkItemListId').value;
-            
-            const data = {
-                name: document.getElementById('checkItemListName').value,
-                description: document.getElementById('checkItemListDesc').value || null
+
+            const itemData = {
+                name,
+                type,
+                target_path,
+                check_attributes,
+                description: description || null,
+                list_id: listId ? parseInt(listId) : null
             };
-            
-            const url = id ? `${API_BASE}/api/v1/check-items/lists/${id}` : `${API_BASE}/api/v1/check-items/lists`;
-            const method = id ? 'PUT' : 'POST';
-            
+
             try {
-                const response = await fetch(url, { method, headers: getHeaders(), body: JSON.stringify(data) });
+                const method = id ? 'PUT' : 'POST';
+                const url = id ? `${window.shared.API_BASE}/api/v1/check-items/${id}` : `${window.shared.API_BASE}/api/v1/check-items`;
+
+                const response = await fetch(url, {
+                    method,
+                    headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(itemData)
+                });
+
                 if (!response.ok) {
                     const error = await response.json();
-                    if (response.status === 400 && error.detail && error.detail.includes('名称已存在')) {
-                        alert('❌ 检查项列表名称已存在，请使用其他名称');
-                    } else if (response.status === 422) {
-                        alert('❌ 输入数据有误，请检查后重试');
-                    } else {
-                        alert('❌ 创建失败: ' + (error.detail || '未知错误'));
-                    }
+                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
                     return;
                 }
-                closeModal('checkItemListModal');
-                loadCheckItemLists();
+
+                window.shared.closeModal('checkItemModal');
+                if (window.checkitems?.loadCheckItems) {
+                    window.checkitems.loadCheckItems(currentCheckItemListId);
+                }
+                if (window.checkitems?.loadCheckItemLists) {
+                    window.checkitems.loadCheckItemLists();
+                }
+                alert(id ? '✅ 检查项更新成功' : '✅ 检查项创建成功');
             } catch (e) {
                 console.error(e);
-                alert('❌ 网络错误，请稍后重试');
+                alert('❌ 网络错误');
             }
         });
-        
-        document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
+    }
+
+    // 快照分组表单
+    const snapshotGroupForm = safeGet('snapshotGroupForm');
+    if (snapshotGroupForm) {
+        snapshotGroupForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            const data = {
-                name: document.getElementById('snapshotName').value,
-                group_id: parseInt(document.getElementById('snapshotGroup').value),
-                is_default: document.getElementById('snapshotDefault').checked,
-                description: document.getElementById('snapshotDesc').value || null
+
+            const id = safeVal('snapshotGroupId');
+            const name = safeVal('snapshotGroupName');
+            const parentId = safeVal('snapshotGroupParent');
+            const checkItemListId = safeVal('snapshotGroupCheckItemList');
+            const description = safeVal('snapshotGroupDesc');
+
+            if (!name) {
+                alert('请填写快照组名称');
+                return;
+            }
+
+            const groupData = {
+                name,
+                parent_id: parentId ? parseInt(parentId) : null,
+                check_item_list_id: checkItemListId ? parseInt(checkItemListId) : null,
+                description: description || null
             };
-            await fetch(`${API_BASE}/api/v1/snapshots`, {
-                method: 'POST',
-                headers: getHeaders(),
-                body: JSON.stringify(data)
-            });
-            closeModal('snapshotModal');
-            window.snapshots.loadSnapshots();
+
+            try {
+                const method = id ? 'PUT' : 'POST';
+                const url = id ? `${window.shared.API_BASE}/api/v1/snapshots/groups/${id}` : `${window.shared.API_BASE}/api/v1/snapshots/groups`;
+
+                const response = await fetch(url, {
+                    method,
+                    headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify(groupData)
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    return;
+                }
+
+                window.shared.closeModal('snapshotGroupModal');
+                if (window.snapshots?.loadSnapshotGroups) {
+                    window.snapshots.loadSnapshotGroups();
+                }
+                alert(id ? '✅ 快照组更新成功' : '✅ 快照组创建成功');
+            } catch (e) {
+                console.error(e);
+                alert('❌ 网络错误');
+            }
         });
-        
-        document.getElementById('checkForm').addEventListener('submit', async (e) => {
+    }
+
+    // 快照表单
+    const snapshotForm = safeGet('snapshotForm');
+    if (snapshotForm) {
+        snapshotForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            await startCheck();
+
+            const name = safeVal('snapshotName');
+            const groupId = safeVal('snapshotGroup');
+            const isDefault = safeGet('snapshotDefault')?.checked || false;
+            const description = safeVal('snapshotDesc');
+
+            if (!name || !groupId) {
+                alert('请填写必填字段');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${window.shared.API_BASE}/api/v1/snapshots`, {
+                    method: 'POST',
+                    headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name,
+                        group_id: parseInt(groupId),
+                        is_default: isDefault,
+                        description: description || null
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    return;
+                }
+
+                window.shared.closeModal('snapshotModal');
+                if (window.snapshots?.loadSnapshots) {
+                    window.snapshots.loadSnapshots();
+                }
+                alert('✅ 快照创建成功');
+            } catch (e) {
+                console.error(e);
+                alert('❌ 网络错误');
+            }
         });
-        
-            document.getElementById('checkItemId').value = '';
-            document.getElementById('checkItemCategory').value = '';
-            document.getElementById('checkItemName').value = '';
-            document.getElementById('checkItemDesc').value = '';
+    }
 
-            // 重置文件/目录检查字段
-            document.getElementById('filePath').value = '';
-            document.getElementById('checkFileMtime').checked = false;
-            document.getElementById('checkFileSize').checked = false;
-            document.getElementById('checkFileOwner').checked = false;
-            document.getElementById('checkFileGroup').checked = false;
-            document.getElementById('checkFilePermissions').checked = false;
-            document.getElementById('checkFileMd5').checked = false;
+    console.log('✅ 表单事件绑定完成');
+}
 
-            // 重置文件内容检查字段
-            document.getElementById('contentFilePath').value = '';
-            document.getElementById('contentFileType').value = 'text';
-            document.getElementById('textCompareMode').value = 'full';
-            document.getElementById('textContent').value = '';
-            document.getElementById('kernelCompareMode').value = 'snapshot';
-            document.getElementById('kernelParamValue').value = '';
+async function refreshData() {
+    console.log('🔄 加载初始数据...');
 
-            // 重置路由表检查字段
-            document.getElementById('routeTableMode').value = 'full';
-            document.getElementById('routeRule').value = '';
-
-            // 显示对应的字段
-            toggleCheckItemCategory();
-            toggleCheckItemFields();
-            toggleContentCheckFields();
-            toggleTextCompareFields();
-            toggleKernelCompareFields();
-            toggleRouteCheckFields();
-
-            document.getElementById('checkItemModalTitle').textContent = '添加检查项';
-            document.getElementById('checkItemModal').classList.add('active');
-        }
-        
-                const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
-                const item = await res.json();
-
-                // 打开模态框并预填信息
-                document.getElementById('checkItemId').value = id;
-                document.getElementById('checkItemName').value = item.name;
-                document.getElementById('checkItemDesc').value = item.description || '';
-
-                const types = Array.isArray(item.type) ? item.type : [item.type];
-
-                // 判断检查项分类
-                let category = '';
-                if (types.includes('file_exists') || types.includes('file_mtime') || types.includes('file_size')
-                    || types.includes('file_owner') || types.includes('file_group') || types.includes('file_permissions')
-                    || types.includes('file_md5')) {
-                    category = 'file';
-                } else if (types.includes('file_content') || types.includes('kernel_param')) {
-                    category = 'content';
-                } else if (types.includes('route_table')) {
-                    category = 'route';
-                }
-                document.getElementById('checkItemCategory').value = category;
-                toggleCheckItemCategory();
-
-                // 根据分类填充字段
-                if (category === 'file') {
-                    // 文件/目录检查
-                    document.getElementById('filePath').value = item.target_path || '';
-
-                    // 修改时间
-                    document.getElementById('checkFileMtime').checked = types.includes('file_mtime');
-                    if (item.check_attributes?.mtime) {
-                        document.getElementById('fileMtimeCompareMode').value = item.check_attributes.mtime.compare_mode || 'snapshot';
-                        document.getElementById('fileMtimeStart').value = item.check_attributes.mtime.start_time || '';
-                        document.getElementById('fileMtimeEnd').value = item.check_attributes.mtime.end_time || '';
-                    }
-
-                    // 大小
-                    document.getElementById('checkFileSize').checked = types.includes('file_size');
-                    if (item.check_attributes?.size) {
-                        document.getElementById('fileSizeCompareMode').value = item.check_attributes.size.compare_mode || 'snapshot';
-                        document.getElementById('fileSizeMin').value = item.check_attributes.size.min_size || '';
-                        document.getElementById('fileSizeMax').value = item.check_attributes.size.max_size || '';
-                    }
-
-                    // 属主
-                    document.getElementById('checkFileOwner').checked = types.includes('file_owner');
-                    if (item.check_attributes?.owner) {
-                        document.getElementById('fileOwnerCompareMode').value = item.check_attributes.owner.compare_mode || 'snapshot';
-                        document.getElementById('fileOwnerValue').value = item.check_attributes.owner.owner || '';
-                    }
-
-                    // 属组
-                    document.getElementById('checkFileGroup').checked = types.includes('file_group');
-                    if (item.check_attributes?.group) {
-                        document.getElementById('fileGroupCompareMode').value = item.check_attributes.group.compare_mode || 'snapshot';
-                        document.getElementById('fileGroupValue').value = item.check_attributes.group.group || '';
-                    }
-
-                    // 权限
-                    document.getElementById('checkFilePermissions').checked = types.includes('file_permissions');
-                    if (item.check_attributes?.permissions) {
-                        document.getElementById('filePermissionsCompareMode').value = item.check_attributes.permissions.compare_mode || 'snapshot';
-                        document.getElementById('filePermissionsValue').value = item.check_attributes.permissions.permissions || '';
-                    }
-
-                    // MD5
-                    document.getElementById('checkFileMd5').checked = types.includes('file_md5');
-                    if (item.check_attributes?.md5) {
-                        document.getElementById('fileMd5CompareMode').value = item.check_attributes.md5.compare_mode || 'snapshot';
-                        document.getElementById('fileMd5Value').value = item.check_attributes.md5.md5_value || '';
-                    }
-
-                } else if (category === 'content') {
-                    // 文件内容检查
-                    document.getElementById('contentFilePath').value = item.target_path || '';
-
-                    if (types.includes('file_content')) {
-                        // 普通文本文件
-                        document.getElementById('contentFileType').value = 'text';
-                        if (item.check_attributes?.content) {
-                            document.getElementById('textCompareMode').value = item.check_attributes.content.compare_mode || 'full';
-                            document.getElementById('textContent').value = item.check_attributes.content.content || '';
-                        }
-                    } else if (types.includes('kernel_param')) {
-                        // 内核参数文件
-                        document.getElementById('contentFileType').value = 'kernel';
-                        if (item.check_attributes?.kernel) {
-                            document.getElementById('kernelCompareMode').value = item.check_attributes.kernel.compare_mode || 'snapshot';
-                            document.getElementById('kernelParamValue').value = item.check_attributes.kernel.param_value || '';
-                        }
-                    }
-
-                } else if (category === 'route') {
-                    // 路由表检查
-                    if (item.check_attributes?.route) {
-                        document.getElementById('routeTableMode').value = item.check_attributes.route.mode || 'full';
-                        document.getElementById('routeRule').value = item.check_attributes.route.route_rule || '';
-                    }
-                }
-
-                toggleCheckItemFields();
-                toggleContentCheckFields();
-                toggleTextCompareFields();
-                toggleKernelCompareFields();
-                toggleRouteCheckFields();
-
-                document.getElementById('checkItemModalTitle').textContent = '编辑检查项';
-                document.getElementById('checkItemModal').classList.add('active');
-            } catch (e) {
-                console.error(e);
-                alert('❌ 编辑异常');
-            }
-        }
-        
-                const res = await fetch(`${API_BASE}/api/v1/check-items/${id}`, { headers: getHeaders() });
-                const item = await res.json();
-
-                // 打开模态框并预填信息（与编辑相同）
-                document.getElementById('checkItemId').value = '';
-                document.getElementById('checkItemName').value = `${item.name} (复制)`;
-                document.getElementById('checkItemDesc').value = item.description || '';
-
-                const types = Array.isArray(item.type) ? item.type : [item.type];
-
-                // 判断检查项分类
-                let category = '';
-                if (types.includes('file_exists') || types.includes('file_mtime') || types.includes('file_size')
-                    || types.includes('file_owner') || types.includes('file_group') || types.includes('file_permissions')
-                    || types.includes('file_md5')) {
-                    category = 'file';
-                } else if (types.includes('file_content') || types.includes('kernel_param')) {
-                    category = 'content';
-                } else if (types.includes('route_table')) {
-                    category = 'route';
-                }
-                document.getElementById('checkItemCategory').value = category;
-                toggleCheckItemCategory();
-
-                // 根据分类填充字段
-                if (category === 'file') {
-                    document.getElementById('filePath').value = item.target_path || '';
-                    document.getElementById('checkFileMtime').checked = types.includes('file_mtime');
-                    if (item.check_attributes?.mtime) {
-                        document.getElementById('fileMtimeCompareMode').value = item.check_attributes.mtime.compare_mode || 'snapshot';
-                        document.getElementById('fileMtimeStart').value = item.check_attributes.mtime.start_time || '';
-                        document.getElementById('fileMtimeEnd').value = item.check_attributes.mtime.end_time || '';
-                    }
-                    document.getElementById('checkFileSize').checked = types.includes('file_size');
-                    if (item.check_attributes?.size) {
-                        document.getElementById('fileSizeCompareMode').value = item.check_attributes.size.compare_mode || 'snapshot';
-                        document.getElementById('fileSizeMin').value = item.check_attributes.size.min_size || '';
-                        document.getElementById('fileSizeMax').value = item.check_attributes.size.max_size || '';
-                    }
-                    document.getElementById('checkFileOwner').checked = types.includes('file_owner');
-                    if (item.check_attributes?.owner) {
-                        document.getElementById('fileOwnerCompareMode').value = item.check_attributes.owner.compare_mode || 'snapshot';
-                        document.getElementById('fileOwnerValue').value = item.check_attributes.owner.owner || '';
-                    }
-                    document.getElementById('checkFileGroup').checked = types.includes('file_group');
-                    if (item.check_attributes?.group) {
-                        document.getElementById('fileGroupCompareMode').value = item.check_attributes.group.compare_mode || 'snapshot';
-                        document.getElementById('fileGroupValue').value = item.check_attributes.group.group || '';
-                    }
-                    document.getElementById('checkFilePermissions').checked = types.includes('file_permissions');
-                    if (item.check_attributes?.permissions) {
-                        document.getElementById('filePermissionsCompareMode').value = item.check_attributes.permissions.compare_mode || 'snapshot';
-                        document.getElementById('filePermissionsValue').value = item.check_attributes.permissions.permissions || '';
-                    }
-                    document.getElementById('checkFileMd5').checked = types.includes('file_md5');
-                    if (item.check_attributes?.md5) {
-                        document.getElementById('fileMd5CompareMode').value = item.check_attributes.md5.compare_mode || 'snapshot';
-                        document.getElementById('fileMd5Value').value = item.check_attributes.md5.md5_value || '';
-                    }
-                } else if (category === 'content') {
-                    document.getElementById('contentFilePath').value = item.target_path || '';
-                    if (types.includes('file_content')) {
-                        document.getElementById('contentFileType').value = 'text';
-                        if (item.check_attributes?.content) {
-                            document.getElementById('textCompareMode').value = item.check_attributes.content.compare_mode || 'full';
-                            document.getElementById('textContent').value = item.check_attributes.content.content || '';
-                        }
-                    } else if (types.includes('kernel_param')) {
-                        document.getElementById('contentFileType').value = 'kernel';
-                        if (item.check_attributes?.kernel) {
-                            document.getElementById('kernelCompareMode').value = item.check_attributes.kernel.compare_mode || 'snapshot';
-                            document.getElementById('kernelParamValue').value = item.check_attributes.kernel.param_value || '';
-                        }
-                    }
-                } else if (category === 'route') {
-                    if (item.check_attributes?.route) {
-                        document.getElementById('routeTableMode').value = item.check_attributes.route.mode || 'full';
-                        document.getElementById('routeRule').value = item.check_attributes.route.route_rule || '';
-                    }
-                }
-
-                toggleCheckItemFields();
-                toggleContentCheckFields();
-                toggleTextCompareFields();
-                toggleKernelCompareFields();
-                toggleRouteCheckFields();
-
-                document.getElementById('checkItemModalTitle').textContent = '克隆检查项';
-                document.getElementById('checkItemModal').classList.add('active');
-            } catch (e) {
-                console.error(e);
-                alert('❌ 克隆异常');
-            }
-        }
-        
-            await fetch(`${API_BASE}/api/v1/check-items/${id}`, { method: 'DELETE', headers: getHeaders() });
-            loadCheckItems();
-        }
-        
-          
-                
-        function closeModal(id) {
-            document.getElementById(id).classList.remove('active');
+    try {
+        // 加载通信机数据
+        if (window.communications?.loadCommunications) {
+            await window.communications.loadCommunications();
+            console.log('✅ 通信机数据加载完成');
         }
 
-        // ========== 缺失的函数 ==========
+        // 加载分组数据
+        if (window.communications?.loadGroups) {
+            await window.communications.loadGroups();
+            console.log('✅ 分组数据加载完成');
+        }
 
-    
-        // ========== 全局函数导出 ==========
-        // 将所有在HTML中通过内联事件调用的函数挂载到window对象
-        window.logout = logout;
-        window.refreshData = refreshData;
-        window.openGroupModal = openGroupModal;
-        window.closeModal = closeModal;
-        window.filterByGroup = filterByGroup;
-        window.searchCommunications = searchCommunications;
-        window.openCommModal = openCommModal;
-        window.openExcelImportModal = openExcelImportModal;
-        window.openBatchDeployModal = openBatchDeployModal;
-        window.downloadExcelTemplate = downloadExcelTemplate;
-          window.openCheckModal = () => window.checks.openCheckModal();
-        window.openSSHKeyModal = openSSHKeyModal;
-        window.loadSSHKeys = loadSSHKeys;
-                window.toggleAuthFields = toggleAuthFields;
-        window.toggleDeployFields = toggleDeployFields;
+        // 加载检查项列表
+        if (window.checkitems?.loadCheckItemLists) {
+            await window.checkitems.loadCheckItemLists();
+            console.log('✅ 检查项列表加载完成');
+        }
 
-        refreshData();
+        // 加载检查项
+        if (window.checkitems?.loadCheckItems) {
+            await window.checkitems.loadCheckItems();
+            console.log('✅ 检查项数据加载完成');
+        }
+
+        // 加载快照组
+        if (window.snapshots?.loadSnapshotGroups) {
+            await window.snapshots.loadSnapshotGroups();
+            console.log('✅ 快照组数据加载完成');
+        }
+
+        // 加载快照
+        if (window.snapshots?.loadSnapshots) {
+            await window.snapshots.loadSnapshots();
+            console.log('✅ 快照数据加载完成');
+        }
+
+        // 加载 SSH 密钥
+        if (window.sshKeys?.loadSSHKeys) {
+            await window.sshKeys.loadSSHKeys();
+            console.log('✅ SSH 密钥数据加载完成');
+        }
+
+        // 加载统计数据
+        await loadStats();
+        console.log('✅ 统计数据加载完成');
+
+    } catch (e) {
+        console.error('❌ 加载数据失败:', e);
+    }
+}
+
+async function loadStats() {
+    try {
+        const { API_BASE } = window.shared;
+        const [commRes, itemRes, snapRes] = await Promise.all([
+            fetch(`${API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() }),
+            fetch(`${API_BASE}/api/v1/check-items`, { headers: window.shared.getHeaders() }),
+            fetch(`${API_BASE}/api/v1/snapshots`, { headers: window.shared.getHeaders() })
+        ]);
+
+        const comms = await commRes.json();
+        const items = await itemRes.json();
+        const snaps = await snapRes.json();
+
+        const commCountEl = safeGet('commCount');
+        const checkItemCountEl = safeGet('checkItemCount');
+        const snapshotCountEl = safeGet('snapshotCount');
+
+        if (commCountEl) commCountEl.textContent = comms.length;
+        if (checkItemCountEl) checkItemCountEl.textContent = items.length;
+        if (snapshotCountEl) snapshotCountEl.textContent = snaps.length;
+    } catch (e) {
+        console.error('加载统计数据失败:', e);
+    }
+}
+
+// 等待所有模块加载完成后再初始化
+document.addEventListener('modulesLoaded', function() {
+    console.log('🚀 所有模块已加载，开始初始化Dashboard...');
+    if (window.auth?.initUserDisplay) {
+        window.auth.initUserDisplay();
+    }
+    initializeDashboard();
+});
+
+// 备用方案
+if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(initializeDashboard, 100);
+}

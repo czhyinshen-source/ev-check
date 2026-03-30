@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>刷新测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1E3A8A; }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+        .status.success {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+        .status.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .status.info {
+            background: #e3f2fd;
+            border-left-color: #2196F3;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        button.success {
+            background: #4CAF50;
+        }
+        .console-output {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .console-line {
+            margin: 2px 0;
+            padding: 2px 0;
+        }
+        .console-line.info { color: #87ceeb; }
+        .console-line.success { color: #90ee90; }
+        .console-line.error { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 刷新问题修复测试</h1>
+
+        <div class="status info">
+            <strong>测试说明:</strong>
+            <ul>
+                <li>这个页面用于测试刷新后的问题是否修复</li>
+                <li>点击下方按钮跳转到Dashboard</li>
+                <li>然后在Dashboard页面刷新多次 (F5 或 Ctrl+R)</li>
+                <li>观察是否还有JavaScript错误</li>
+            </ul>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <button onclick="testAndRedirect()" class="success">测试并跳转到Dashboard</button>
+            <button onclick="showDebugInfo()">显示调试信息</button>
+        </div>
+
+        <div id="statusOutput"></div>
+
+        <div style="margin: 20px 0;">
+            <h3>调试控制台</h3>
+            <button onclick="clearConsole()">清空控制台</button>
+            <div id="consoleOutput" class="console-output"></div>
+        </div>
+
+        <div class="status info">
+            <strong>预期结果:</strong>
+            <ul>
+                <li>✅ 用户信息正确显示</li>
+                <li>✅ 导航栏可以正常切换</li>
+                <li>✅ 没有JavaScript错误</li>
+                <li>✅ 刷新多次后仍然正常</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const console = document.getElementById('consoleOutput');
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] ${message}`;
+            console.insertBefore(line, console.firstChild);
+        }
+
+        function clearConsole() {
+            document.getElementById('consoleOutput').innerHTML = '';
+        }
+
+        function showStatus(message, type) {
+            const element = document.getElementById('statusOutput');
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function testAndRedirect() {
+            log('🔧 开始测试...', 'info');
+
+            // 检查localStorage
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            if (!token) {
+                log('❌ 未找到token，需要先登录', 'error');
+                showStatus('❌ 未找到token，请先登录<br><a href="/login.html">前往登录</a>', 'error');
+                return;
+            }
+
+            log('✅ Token存在', 'success');
+            log(`👤 用户: ${username || '未知'}`, 'info');
+
+            // 测试API连接
+            fetch('/api/v1/users/me', {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(res => {
+                if (res.ok) {
+                    return res.json();
+                } else {
+                    throw new Error('API失败');
+                }
+            })
+            .then(user => {
+                log(`✅ API连接正常: ${user.username}`, 'success');
+                showStatus(`✅ 测试通过！<br>用户: ${user.username}<br><br><a href="/dashboard.html" class="button">点击跳转到Dashboard</a><br><br>然后在Dashboard页面按F5刷新多次测试`, 'success');
+            })
+            .catch(error => {
+                log(`❌ API测试失败: ${error.message}`, 'error');
+                showStatus(`❌ API测试失败: ${error.message}`, 'error');
+            });
+        }
+
+        function showDebugInfo() {
+            log('=== 调试信息 ===', 'info');
+
+            // 检查localStorage
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+            log(`Token: ${token ? '存在' : '不存在'}`, token ? 'success' : 'error');
+            log(`Username: ${username || '不存在'}`, username ? 'success' : 'error');
+
+            // 检查模块
+            log(`window.shared: ${window.shared ? '存在' : '不存在'}`, window.shared ? 'success' : 'error');
+            log(`window.communications: ${window.communications ? '存在' : '不存在'}`, window.communications ? 'success' : 'info');
+
+            // 检查浏览器信息
+            log(`User Agent: ${navigator.userAgent.substring(0, 50)}...`, 'info');
+            log(`语言: ${navigator.language}`, 'info');
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            log('📋 测试页面加载完成', 'info');
+            showDebugInfo();
+        });
+    </script>
+</body>
+</html>

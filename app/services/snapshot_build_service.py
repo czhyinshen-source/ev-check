@@ -4,6 +4,7 @@ from typing import Optional, Dict, Any, List
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import (
     Snapshot, SnapshotGroup, SnapshotInstance, EnvironmentData,
@@ -100,13 +101,17 @@ class SnapshotBuildService:
         await self.db.commit()
         await self.db.refresh(task)
 
-        # 6. 初始化进度追踪
-        await self.progress_tracker.set_initial_progress(
-            task_id=task.id,
-            total_groups=len(build_config),
-            total_communications=total_communications,
-            groups_config=groups_config,
-        )
+        # 6. 初始化进度追踪（如果 Redis 不可用也继续）
+        try:
+            await self.progress_tracker.set_initial_progress(
+                task_id=task.id,
+                total_groups=len(build_config),
+                total_communications=total_communications,
+                groups_config=groups_config,
+            )
+        except Exception as e:
+            print(f"警告: Redis 进度追踪初始化失败 - {e}")
+            # 继续执行，不阻塞快照创建
 
         return task
 
@@ -175,26 +180,33 @@ class SnapshotBuildService:
                         current_communication=comm.name, status="running"
                     )
 
+                    # 先创建快照实例（无论连接是否成功）
+                    instance = SnapshotInstance(
+                        snapshot_id=task.snapshot_id,
+                        communication_id=comm.id,
+                        check_item_list_id=check_list_id,
+                    )
+                    self.db.add(instance)
+                    await self.db.flush()
+
+                    # 连接错误信息
+                    connection_error = None
+                    ssh_client = None
+
                     try:
                         # SSH 连接
                         ssh_client = await self._create_ssh_client(comm)
                         connected = await ssh_client.connect()
-                        if not connected:
-                            comms_progress[idx]["status"] = "failed"
-                            await self.progress_tracker.update_group_status(
-                                task_id, group_id, "running", comms_progress
-                            )
-                            await ssh_client.close()
-                            continue
 
-                        # 创建快照实例
-                        instance = SnapshotInstance(
-                            snapshot_id=task.snapshot_id,
-                            communication_id=comm.id,
-                            check_item_list_id=check_list_id,
-                        )
-                        self.db.add(instance)
-                        await self.db.flush()
+                        if not connected:
+                            # 获取具体的连接错误信息
+                            connection_error = getattr(ssh_client, 'last_error', 'SSH 连接失败')
+                            if not connection_error or connection_error == 'SSH 连接失败':
+                                # 尝试从 SSH 客户端获取更详细的错误
+                                if hasattr(ssh_client, 'connect_exception'):
+                                    connection_error = f"SSH 连接失败: {str(ssh_client.connect_exception)}"
+                                else:
+                                    connection_error = "SSH 连接失败: 请检查通信机地址、端口、用户名和密码/密钥配置"
 
                         # 采集数据
                         for item in check_items:
@@ -206,24 +218,53 @@ class SnapshotBuildService:
                                 "check_attributes": item.check_attributes,
                             }
 
-                            result = await execute_check(ssh_client, item_dict, None)
+                            if connection_error:
+                                # 连接失败时，记录错误信息
+                                result_data = {
+                                    "_error": connection_error,
+                                    "_status": "connection_failed"
+                                }
+                            else:
+                                # 正常采集
+                                result = await execute_check(ssh_client, item_dict, None)
+                                result_data = result.actual_value or {}
 
-                            # 保存环境数据（只保存实际值，不做对比）
+                            # 保存环境数据
                             env_data = EnvironmentData(
                                 snapshot_instance_id=instance.id,
                                 check_item_id=item.id,
-                                data_value=result.actual_value or {},
+                                data_value=result_data,
                             )
                             self.db.add(env_data)
 
                         await self.db.commit()
-                        await ssh_client.close()
-
-                        comms_progress[idx]["status"] = "success"
+                        comms_progress[idx]["status"] = "success" if not connection_error else "failed"
 
                     except Exception as e:
+                        connection_error = str(e)
                         comms_progress[idx]["status"] = "failed"
                         group_success = False
+
+                        # 记录异常到环境数据
+                        for item in check_items:
+                            env_data = EnvironmentData(
+                                snapshot_instance_id=instance.id,
+                                check_item_id=item.id,
+                                data_value={
+                                    "_error": connection_error,
+                                    "_status": "error",
+                                    "_error_type": type(e).__name__
+                                },
+                            )
+                            self.db.add(env_data)
+                        await self.db.commit()
+
+                    finally:
+                        if ssh_client:
+                            try:
+                                await ssh_client.close()
+                            except Exception:
+                                pass
 
                     # 更新进度
                     completed_comm += 1
@@ -307,7 +348,9 @@ class SnapshotBuildService:
         group_id: int,
         comm_ids: Optional[List[int]] = None
     ) -> List[Communication]:
-        query = select(Communication).where(Communication.group_id == group_id)
+        query = select(Communication).options(
+            selectinload(Communication.group)
+        ).where(Communication.group_id == group_id)
         if comm_ids:
             query = query.where(Communication.id.in_(comm_ids))
         result = await self.db.execute(query)

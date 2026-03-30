@@ -5,8 +5,20 @@ import { vi } from 'vitest';
 global.document = {
   addEventListener: vi.fn(),
   getElementById: vi.fn(),
-  querySelector: vi.fn(),
-  createElement: vi.fn(),
+  querySelector: vi.fn(() => document.createElement('div')),
+  createElement: vi.fn(() => ({
+    innerHTML: '',
+    firstElementChild: {
+      innerHTML: '',
+      classList: {
+        add: vi.fn()
+      }
+    },
+    classList: {
+      add: vi.fn(),
+      remove: vi.fn()
+    }
+  })),
   body: {
     appendChild: vi.fn(),
     removeChild: vi.fn()

@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     # 数据库配置
+    # 开发环境默认使用 SQLite，生产环境使用 MySQL
+    # MySQL 格式: mysql+aiomysql://用户名:密码@主机:端口/数据库名
     DATABASE_URL: str = "sqlite+aiosqlite:///./ev_check.db"
 
     # JWT 配置

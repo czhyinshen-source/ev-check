@@ -294,8 +294,10 @@ chore: 构建/工具链相关
 
 ```bash
 # 数据库配置
-DATABASE_URL=sqlite:///./ev_check.db
-# DATABASE_URL=postgresql://user:password@localhost:5432/ev_check
+# 开发环境 - SQLite
+DATABASE_URL=sqlite+aiosqlite:///./ev_check.db
+# 生产环境 - MySQL (推荐)
+# DATABASE_URL=mysql+aiomysql://root:password@localhost:3306/ev_check
 
 # Redis 配置
 REDIS_URL=redis://localhost:6379/0
@@ -304,6 +306,10 @@ REDIS_URL=redis://localhost:6379/0
 SECRET_KEY=your-secret-key-here
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Celery 配置
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
 # 应用配置
 DEBUG=True

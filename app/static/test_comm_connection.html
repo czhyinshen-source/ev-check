@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>测试通信机连接 - v8</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 30px; border-radius: 10px; }
+        h1 { color: #1E3A8A; }
+        .status { padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #ccc; }
+        .status.success { background: #e8f5e9; border-left-color: #4CAF50; }
+        .status.error { background: #ffebee; border-left-color: #f44336; }
+        .status.info { background: #e3f2fd; border-left-color: #2196F3; }
+        .status.warning { background: #fff3e0; border-left-color: #ff9800; }
+        button { background: #4CAF50; color: white; border: none; padding: 12px 24px; border-radius: 5px; cursor: pointer; margin: 5px; }
+        button:hover { background: #45a049; }
+        .log { background: #f9f9f9; padding: 10px; margin: 10px 0; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 通信机连接测试 v8</h1>
+
+        <div class="status info">
+            <strong>📋 本次修复内容:</strong>
+            <ul>
+                <li>✅ 添加了 /status API 端点</li>
+                <li>✅ 数据库添加 auth_method 字段</li>
+                <li>✅ 修复前端 auth_method 字段处理</li>
+                <li>✅ 修复 editComm 函数</li>
+                <li>✅ 统一使用 password/private_key 值</li>
+            </ul>
+        </div>
+
+        <div class="status warning">
+            <strong>⚠️ 测试步骤:</strong>
+            <ol>
+                <li>点击下方按钮跳转到 Dashboard</li>
+                <li>点击通信机管理</li>
+                <li>点击"测试"按钮测试连接</li>
+                <li>检查是否能正常连接</li>
+            </ol>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <button onclick="goToDashboard()">跳转Dashboard测试</button>
+            <button onclick="runDiagnostics()">运行诊断脚本</button>
+        </div>
+
+        <div id="logArea" class="log" style="display:none;"></div>
+    </div>
+
+    <script>
+        function goToDashboard() {
+            if (confirm('确认跳转到Dashboard?\n\n请测试:\n1. 通信机列表是否加载\n2. 点击"测试"按钮是否正常\n3. 编辑通信机是否正常显示认证方式')) {
+                window.location.href = '/dashboard.html';
+            }
+        }
+
+        async function runDiagnostics() {
+            const logArea = document.getElementById('logArea');
+            logArea.style.display = 'block';
+            logArea.innerHTML = '<div>🔍 开始诊断...</div>';
+
+            const token = localStorage.getItem('token');
+            if (!token) {
+                logArea.innerHTML += '<div style="color:red">❌ 未找到token，请先登录</div>';
+                return;
+            }
+
+            const headers = {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            };
+
+            try {
+                // 测试通信机列表
+                logArea.innerHTML += '<div>📡 测试通信机列表...</div>';
+                const commsRes = await fetch('/api/v1/communications', { headers });
+                if (commsRes.ok) {
+                    const comms = await commsRes.json();
+                    logArea.innerHTML += `<div style="color:green">✅ 找到 ${comms.length} 个通信机</div>`;
+
+                    if (comms.length > 0) {
+                        const testComm = comms[0];
+                        logArea.innerHTML += `<div>🔧 测试连接到: ${testComm.name} (${testComm.ip_address})</div>`;
+                        logArea.innerHTML += `<div>   认证方式: ${testComm.auth_method || '未知'}</div>`;
+                        logArea.innerHTML += `<div>   端口: ${testComm.port}</div>`;
+                        logArea.innerHTML += `<div>   用户: ${testComm.username}</div>`;
+
+                        // 测试连接状态API
+                        logArea.innerHTML += '<div>🔌 测试连接状态API...</div>';
+                        const statusRes = await fetch(`/api/v1/communications/${testComm.id}/status`, { headers });
+                        if (statusRes.ok) {
+                            const status = await statusRes.json();
+                            logArea.innerHTML += `<div style="color:green">✅ 连接状态: ${status.status}</div>`;
+                            logArea.innerHTML += `<div>   消息: ${status.message}</div>`;
+                        } else {
+                            const error = await statusRes.json();
+                            logArea.innerHTML += `<div style="color:red">❌ API错误: ${JSON.stringify(error)}</div>`;
+                        }
+                    }
+                } else {
+                    logArea.innerHTML += `<div style="color:red">❌ 获取通信机列表失败: ${commsRes.status}</div>`;
+                }
+
+                // 测试SSH密钥列表
+                logArea.innerHTML += '<div>🔑 测试SSH密钥列表...</div>';
+                const keysRes = await fetch('/api/v1/keys', { headers });
+                if (keysRes.ok) {
+                    const keys = await keysRes.json();
+                    logArea.innerHTML += `<div style="color:green">✅ 找到 ${keys.length} 个SSH密钥</div>`;
+                } else {
+                    logArea.innerHTML += `<div style="color:orange">⚠️ 获取SSH密钥失败: ${keysRes.status}</div>`;
+                }
+
+                logArea.innerHTML += '<div style="color:green"><strong>✅ 诊断完成</strong></div>';
+            } catch (e) {
+                logArea.innerHTML += `<div style="color:red">❌ 诊断失败: ${e.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

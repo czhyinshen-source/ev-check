@@ -1,10 +1,11 @@
 # 通信机管理 API
-from typing import Optional, List
+from typing import Optional, List, Dict
 from io import BytesIO
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 import openpyxl
 
 from app.database import get_db
@@ -56,18 +57,85 @@ class CommunicationResponse:
     updated_at: str
 
 
+class BatchUpdateRequest(BaseModel):
+    """批量更新请求"""
+    ids: List[int]
+    group_id: Optional[int] = None
+    description: Optional[str] = None
+
+
+class BatchDeleteRequest(BaseModel):
+    """批量删除请求"""
+    ids: List[int]
+
+
+class BatchTestRequest(BaseModel):
+    """批量测试连接请求"""
+    ids: List[int]
+
+
+def _build_group_tree(groups: List[CommunicationGroup]) -> List[dict]:
+    """将扁平分组列表构建为树形结构"""
+    # 创建 ID 到分组的映射
+    group_map = {}
+    for g in groups:
+        group_map[g.id] = {
+            "id": g.id,
+            "name": g.name,
+            "parent_id": g.parent_id,
+            "sort_order": g.sort_order,
+            "description": g.description,
+            "created_at": g.created_at.isoformat(),
+            "updated_at": g.updated_at.isoformat(),
+            "children": []
+        }
+
+    # 构建树形结构
+    tree = []
+    for group_id, group in group_map.items():
+        if group["parent_id"] is None:
+            tree.append(group)
+        else:
+            parent = group_map.get(group["parent_id"])
+            if parent:
+                parent["children"].append(group)
+
+    # 对每层的子节点排序
+    def sort_children(items):
+        for item in items:
+            if item["children"]:
+                item["children"].sort(key=lambda x: x["sort_order"])
+                sort_children(item["children"])
+
+    sort_children(tree)
+    tree.sort(key=lambda x: x["sort_order"])
+
+    return tree
+
+
 @router.get("/groups", response_model=List[dict])
 async def list_groups(
+    format: str = "flat",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """获取通信机分组列表"""
-    result = await db.execute(select(CommunicationGroup))
+    """获取通信机分组列表
+
+    format=flat: 返回扁平列表
+    format=tree: 返回嵌套树形结构
+    """
+    result = await db.execute(select(CommunicationGroup).order_by(CommunicationGroup.sort_order))
     groups = result.scalars().all()
+
+    if format == "tree":
+        return _build_group_tree(list(groups))
+
     return [
         {
             "id": g.id,
             "name": g.name,
+            "parent_id": g.parent_id,
+            "sort_order": g.sort_order,
             "description": g.description,
             "created_at": g.created_at.isoformat(),
             "updated_at": g.updated_at.isoformat(),
@@ -83,11 +151,138 @@ async def create_group(
     current_user: User = Depends(get_current_active_user),
 ):
     """创建通信机分组"""
-    db_group = CommunicationGroup(name=group["name"], description=group.get("description"))
+    parent_id = group.get("parent_id")
+    sort_order = group.get("sort_order", 0)
+
+    # 检查同一父分组下名称是否重复
+    if parent_id is not None:
+        existing = await db.execute(
+            select(CommunicationGroup).where(
+                CommunicationGroup.name == group["name"],
+                CommunicationGroup.parent_id == parent_id
+            )
+        )
+    else:
+        existing = await db.execute(
+            select(CommunicationGroup).where(
+                CommunicationGroup.name == group["name"],
+                CommunicationGroup.parent_id.is_(None)
+            )
+        )
+
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="同一父分组下已存在同名分组")
+
+    db_group = CommunicationGroup(
+        name=group["name"],
+        parent_id=parent_id,
+        sort_order=sort_order,
+        description=group.get("description")
+    )
     db.add(db_group)
     await db.commit()
     await db.refresh(db_group)
-    return {"id": db_group.id, "name": db_group.name}
+    return {
+        "id": db_group.id,
+        "name": db_group.name,
+        "parent_id": db_group.parent_id,
+        "sort_order": db_group.sort_order
+    }
+
+
+@router.put("/groups/{group_id}")
+async def update_group(
+    group_id: int,
+    group_data: dict,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """更新通信机分组"""
+    result = await db.execute(select(CommunicationGroup).where(CommunicationGroup.id == group_id))
+    db_group = result.scalar_one_or_none()
+    if not db_group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    # 检查循环引用：不能将分组设为自己的后代
+    new_parent_id = group_data.get("parent_id")
+    if new_parent_id is not None and new_parent_id == group_id:
+        raise HTTPException(status_code=400, detail="不能将分组设为自己的父级")
+
+    # 递归检查是否为自己的后代
+    if new_parent_id:
+        async def is_descendant(parent_id: int, child_id: int) -> bool:
+            result = await db.execute(select(CommunicationGroup).where(CommunicationGroup.id == parent_id))
+            parent = result.scalar_one_or_none()
+            if not parent or parent.parent_id is None:
+                return False
+            if parent.parent_id == child_id:
+                return True
+            return await is_descendant(parent.parent_id, child_id)
+
+        if await is_descendant(new_parent_id, group_id):
+            raise HTTPException(status_code=400, detail="不能将分组移入自己的子分组")
+
+    # 检查同一父分组下名称是否重复
+    new_name = group_data.get("name")
+    if new_name and new_name != db_group.name:
+        if new_parent_id is not None:
+            existing = await db.execute(
+                select(CommunicationGroup).where(
+                    CommunicationGroup.name == new_name,
+                    CommunicationGroup.parent_id == new_parent_id,
+                    CommunicationGroup.id != group_id
+                )
+            )
+        else:
+            existing = await db.execute(
+                select(CommunicationGroup).where(
+                    CommunicationGroup.name == new_name,
+                    CommunicationGroup.parent_id.is_(None),
+                    CommunicationGroup.id != group_id
+                )
+            )
+
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="同一父分组下已存在同名分组")
+
+    # 更新字段
+    for key, value in group_data.items():
+        if hasattr(db_group, key) and key not in ("id", "created_at"):
+            setattr(db_group, key, value)
+
+    await db.commit()
+    await db.refresh(db_group)
+    return {
+        "id": db_group.id,
+        "name": db_group.name,
+        "parent_id": db_group.parent_id,
+        "sort_order": db_group.sort_order
+    }
+
+
+@router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_group(
+    group_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """删除通信机分组"""
+    result = await db.execute(select(CommunicationGroup).where(CommunicationGroup.id == group_id))
+    group = result.scalar_one_or_none()
+    if not group:
+        raise HTTPException(status_code=404, detail="分组不存在")
+
+    # 检查是否有子分组
+    if group.children:
+        raise HTTPException(status_code=400, detail="请先删除子分组")
+
+    # 检查是否有通信机
+    result = await db.execute(select(Communication).where(Communication.group_id == group_id))
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=400, detail="请先将通信机迁移到其他分组")
+
+    await db.delete(group)
+    await db.commit()
 
 
 @router.get("", response_model=List[dict])
@@ -135,6 +330,7 @@ async def create_communication(
         ip_address=comm["ip_address"],
         port=comm.get("port", 22),
         username=comm.get("username", "root"),
+        auth_method=comm.get("auth_method", "password"),
         password=comm.get("password"),
         private_key_path=comm.get("private_key_path"),
         description=comm.get("description"),
@@ -143,8 +339,124 @@ async def create_communication(
     await db.commit()
     await db.refresh(db_comm)
     return {
-        "id": db_comm.id, 
+        "id": db_comm.id,
         "name": db_comm.name
+    }
+
+
+@router.put("/batch")
+async def batch_update_communications(
+    data: BatchUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """批量更新通信机"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="未指定通信机")
+
+    result = await db.execute(select(Communication).where(Communication.id.in_(data.ids)))
+    communications = result.scalars().all()
+
+    updated_count = 0
+    for comm in communications:
+        # 只更新明确提供的字段
+        if data.group_id is not None:
+            comm.group_id = data.group_id
+            updated_count += 1
+        if data.description is not None:
+            comm.description = data.description
+            updated_count += 1
+
+    await db.commit()
+    return {"updated": updated_count}
+
+
+@router.delete("/batch", status_code=status.HTTP_204_NO_CONTENT)
+async def batch_delete_communications(
+    data: BatchDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """批量删除通信机"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="未指定通信机")
+
+    result = await db.execute(select(Communication).where(Communication.id.in_(data.ids)))
+    communications = result.scalars().all()
+
+    for comm in communications:
+        await db.delete(comm)
+
+    await db.commit()
+
+
+@router.post("/batch-test")
+async def batch_test_connections(
+    data: BatchTestRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """批量测试通信机连接"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="未指定通信机")
+
+    result = await db.execute(select(Communication).where(Communication.id.in_(data.ids)))
+    communications = result.scalars().all()
+
+    results = []
+    online_count = 0
+    offline_count = 0
+
+    for comm in communications:
+        status = "offline"
+        message = "连接失败"
+
+        try:
+            private_key = None
+            if comm.private_key_path and comm.private_key_path.startswith("key_"):
+                ssh_key_id = int(comm.private_key_path.replace("key_", ""))
+                ssh_key_result = await db.execute(select(SSHKey).where(SSHKey.id == ssh_key_id))
+                ssh_key = ssh_key_result.scalar_one_or_none()
+                if ssh_key:
+                    private_key = ssh_key.private_key
+
+            ssh_client = SSHClientWrapper(
+                host=comm.ip_address,
+                port=comm.port,
+                username=comm.username,
+                password=comm.password,
+                private_key_path=None,
+                private_key=private_key,
+            )
+
+            connected = await ssh_client.connect()
+            await ssh_client.close()
+
+            if connected:
+                status = "online"
+                message = "连接成功"
+                online_count += 1
+            else:
+                offline_count += 1
+        except Exception as e:
+            message = f"连接失败: {str(e)}"
+            offline_count += 1
+
+        results.append({
+            "id": comm.id,
+            "name": comm.name,
+            "ip_address": comm.ip_address,
+            "status": status,
+            "message": message
+        })
+
+    return {
+        "results": results,
+        "summary": {
+            "total": len(results),
+            "online": online_count,
+            "offline": offline_count
+        }
     }
 
 
@@ -193,6 +505,60 @@ async def update_communication(
     await db.commit()
     await db.refresh(db_comm)
     return {"id": db_comm.id, "name": db_comm.name}
+
+
+@router.get("/{comm_id}/status")
+async def test_connection(
+    comm_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """测试通信机连接"""
+    result = await db.execute(select(Communication).where(Communication.id == comm_id))
+    comm = result.scalar_one_or_none()
+    if not comm:
+        raise HTTPException(status_code=404, detail="通信机不存在")
+
+    # 获取SSH密钥���如果使用密钥认证）
+    private_key = None
+    if comm.private_key_path and comm.private_key_path.startswith("key_"):
+        ssh_key_id = int(comm.private_key_path.replace("key_", ""))
+        ssh_key_result = await db.execute(select(SSHKey).where(SSHKey.id == ssh_key_id))
+        ssh_key = ssh_key_result.scalar_one_or_none()
+        if ssh_key:
+            private_key = ssh_key.private_key
+
+    # 记录调试信息
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"测试通信机连接: id={comm_id}, host={comm.ip_address}, port={comm.port}, username={comm.username}")
+    logger.info(f"认证方式: 密码={'是' if comm.password else '否'}, 密钥={'是' if private_key else '否'}")
+
+    # 测试连接
+    try:
+        ssh_client = SSHClientWrapper(
+            host=comm.ip_address,
+            port=comm.port,
+            username=comm.username,
+            password=comm.password,
+            private_key_path=None,
+            private_key=private_key,
+        )
+
+        connected = await ssh_client.connect()
+        await ssh_client.close()
+
+        if connected:
+            logger.info(f"通信机 {comm_id} 连接成功")
+            return {"status": "online", "message": "连接成功"}
+        else:
+            logger.warning(f"通信机 {comm_id} 连接失败（connect 返回 False）")
+            return {"status": "offline", "message": "连接失败：无法建立 SSH 连接"}
+    except Exception as e:
+        logger.error(f"通信机 {comm_id} 连接异常: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return {"status": "offline", "message": f"连接失败: {str(e)}"}
 
 
 @router.delete("/{comm_id}", status_code=status.HTTP_204_NO_CONTENT)

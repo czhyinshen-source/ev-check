@@ -1,19 +1,21 @@
 version: '3.8'
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    container_name: ev_check_postgres
+  mysql:
+    image: mysql:8.0
+    container_name: ev_check_mysql
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: ev_check
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: ev_check
+      MYSQL_USER: ev_check
+      MYSQL_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d ev_check"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -37,12 +39,12 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/ev_check
+      - DATABASE_URL=mysql+aiomysql://ev_check:password@mysql:3306/ev_check
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -54,19 +56,19 @@ services:
     build: .
     container_name: ev_check_celery
     environment:
-      - DATABASE_URL=postgresql://user:password@postgres:5432/ev_check
+      - DATABASE_URL=mysql+aiomysql://ev_check:password@mysql:3306/ev_check
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
       - .:/app
-    command: celery -A app.tasks worker --loglevel=info
+    command: celery -A app.celery_config worker --loglevel=info
 
 volumes:
-  postgres_data:
+  mysql_data:
   redis_data:

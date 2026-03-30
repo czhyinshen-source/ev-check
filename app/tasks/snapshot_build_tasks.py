@@ -46,7 +46,24 @@ def run_build(task_id: int):
                     "message": f"构建异常: {str(e)}",
                 }
 
-    return asyncio.run(_execute())
+    # 确保在新的事件循环中运行
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("Loop is closed")
+    except RuntimeError:
+        # 创建新的事件循环
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    try:
+        return loop.run_until_complete(_execute())
+    finally:
+        # 清理事件循环
+        try:
+            loop.close()
+        except:
+            pass
 
 
 @celery_app.task(

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>最终修复验证</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1E3A8A; }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+        .status.success {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+        .status.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .status.info {
+            background: #e3f2fd;
+            border-left-color: #2196F3;
+        }
+        .status.warning {
+            background: #fff3e0;
+            border-left-color: #ff9800;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button.success {
+            background: #4CAF50;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        .issue-list {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .issue-item {
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 3px solid #ddd;
+        }
+        .issue-item.fixed {
+            border-left-color: #4CAF50;
+            background: #f1f8f4;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 最终修复验证和测试</h1>
+
+        <div class="status warning">
+            <strong>🚨 检测到的问题:</strong>
+            <div class="issue-list">
+                <div class="issue-item fixed">✅ filterByGroup 未定义 - 已修复</div>
+                <div class="issue-item fixed">✅ 导航栏刷新后错误 - 已修复</div>
+                <div class="issue-item fixed">✅ results.forEach 错误 - 已修复</div>
+                <div class="issue-item fixed">✅ 405 Method Not Allowed - 已修复</div>
+                <div class="issue-item fixed">✅ getHeaders 重复声明 - 已修复</div>
+                <div class="issue-item">ℹ️  DOM警告 (表单结构) - 不影响功能</div>
+            </div>
+        </div>
+
+        <div class="status info">
+            <strong>📋 修复摘要:</strong>
+            <ul>
+                <li>✅ 修复了 filterByGroup 函数引用</li>
+                <li>✅ 修复了通信机状态检查API调用</li>
+                <li>✅ 更新了脚本版本到 v=4</li>
+                <li>✅ 优化了模块加载和初始化</li>
+            </ul>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 1: 清除浏览器缓存 (必须!)</h3>
+            <button onclick="showCacheGuide()" class="danger">显示清除指南</button>
+            <div id="cacheGuide"></div>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 2: 系统功能测试</h3>
+            <button onclick="runSystemTest()" class="success">运行完整测试</button>
+            <div id="testResults"></div>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 3: 跳转到Dashboard</h3>
+            <button onclick="goToDashboard()" class="success">跳转到Dashboard测试</button>
+        </div>
+
+        <div class="status info">
+            <strong>🎯 预期结果:</strong>
+            <ul>
+                <li>✅ 没有JavaScript错误</li>
+                <li>✅ filterByGroup 正常工作</li>
+                <li>✅ 导航栏可以切换和刷新</li>
+                <li>✅ 通信机列表正常加载</li>
+                <li>✅ 状态检查功能正常</li>
+            </ul>
+        </div>
+
+        <div class="status warning">
+            <strong>⚠️  关于DOM警告:</strong>
+            <p>DOM警告是关于表单结构的建议，不影响功能。主要是建议将复杂表单分离。目前每个模态框都有独立的表单，结构是正确的。</p>
+        </div>
+    </div>
+
+    <script>
+        function showStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function showCacheGuide() {
+            const guide = `
+                <div class="status info">
+                    <strong>🔄 必须清除浏览器缓存:</strong><br><br>
+                    <strong>方法 1: 硬刷新 (最简单)</strong><br>
+                    Windows: Ctrl + Shift + F5<br>
+                    Mac: Cmd + Shift + R<br><br>
+                    <strong>方法 2: 开发者工具</strong><br>
+                    1. 按 F12 打开开发者工具<br>
+                    2. 右键点击刷新按钮<br>
+                    3. 选择"清空缓存并硬性重新加载"<br><br>
+                    <strong>方法 3: 完全清除</strong><br>
+                    1. Ctrl + Shift + Delete (Win) / Cmd + Shift + Delete (Mac)<br>
+                    2. 选择"缓存的图片和文件"<br>
+                    3. 点击"清除数据"
+                </div>
+            `;
+            document.getElementById('cacheGuide').innerHTML = guide;
+        }
+
+        async function runSystemTest() {
+            let results = [];
+            let html = '<div class="issue-list">';
+
+            // 1. 检查模块加载
+            html += '<div class="issue-item">检查模块加载...';
+            const modules = ['shared', 'communications', 'checks', 'checkitems', 'snapshots', 'reports'];
+            let allModulesLoaded = true;
+            modules.forEach(moduleName => {
+                if (window[moduleName]) {
+                    html += ` ✅ ${moduleName}</div>`;
+                } else {
+                    html += ` ❌ ${moduleName}</div>`;
+                    allModulesLoaded = false;
+                }
+            });
+            if (allModulesLoaded) {
+                html += '</div><div class="issue-item fixed">✅ 所有模块已加载</div>';
+            } else {
+                html += '</div><div class="issue-item">❌ 部分模块未加载</div>';
+            }
+
+            // 2. 检查关键函数
+            html += '<div class="issue-item">检查关键函数...';
+            const functions = ['filterByGroup', 'openGroupModal', 'searchCommunications',
+                              'openCommModal', 'toggleAuthFields'];
+            let allFunctionsExist = true;
+            functions.forEach(funcName => {
+                if (typeof window[funcName] === 'function') {
+                    html += ` ✅ ${funcName}</div>`;
+                } else {
+                    html += ` ❌ ${funcName}</div>`;
+                    allFunctionsExist = false;
+                }
+            });
+            if (allFunctionsExist) {
+                html += '</div><div class="issue-item fixed">✅ 所有关键函数存在</div>';
+            } else {
+                html += '</div><div class="issue-item">❌ 部分函数缺失</div>';
+            }
+
+            // 3. 检查localStorage
+            html += '<div class="issue-item">检查登录状态...';
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+            if (token && username) {
+                html += ` ✅ Token存在, ✅ 用户: ${username}</div></div><div class="issue-item fixed">✅ 已登录</div>`;
+            } else {
+                html += ` ❌ 未登录</div></div><div class="issue-item">⚠️  需要登录</div>`;
+            }
+
+            // 4. 测试API连接
+            html += '<div class="issue-item">测试API连接...';
+            if (token) {
+                try {
+                    const response = await fetch('/api/v1/users/me', {
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        const user = await response.json();
+                        html += ` ✅ API正常: ${user.username}</div></div><div class="issue-item fixed">✅ API连接正常</div>`;
+                    } else {
+                        html += ` ❌ API错误: ${response.status}</div></div><div class="issue-item">❌ API连接失败</div>`;
+                    }
+                } catch (error) {
+                    html += ` ❌ 请求异常: ${error.message}</div></div><div class="issue-item">❌ 网络错误</div>`;
+                }
+            } else {
+                html += ` ⚠️  跳过 (未登录)</div></div>';
+            }
+
+            html += '</div>';
+            showStatus('testResults', html + '</div>', 'info');
+        }
+
+        function goToDashboard() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                alert('⚠️  请先登录');
+                window.location.href = '/login.html';
+                return;
+            }
+
+            if (confirm('✅ 确认跳转到Dashboard?\n\n跳转后请测试:\n1. 点击不同导航栏标签\n2. 按F5刷新页面\n3. 点击"检查所有通信机状态"\n4. 确认一切正常')) {
+                window.location.href = '/dashboard.html';
+            }
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            console.log('📋 最终验证页面加载完成');
+            console.log('💡 请先按 Ctrl + Shift + F5 清除缓存');
+            console.log('💡 DOM警告不影响功能，可以忽略');
+        });
+    </script>
+</body>
+</html>

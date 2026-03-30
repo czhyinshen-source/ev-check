@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户信息调试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .debug-section {
+            border: 1px solid #ccc;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .debug-section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 3px;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 3px;
+        }
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 3px;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        #output {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>用户信息调试工具</h1>
+
+    <div class="debug-section">
+        <h3>1. localStorage 检查</h3>
+        <button onclick="checkStorage()">检查 localStorage</button>
+        <button onclick="clearStorage()">清除 localStorage</button>
+        <button onclick="setTestUser()">设置测试用户</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>2. 登录测试</h3>
+        <input type="text" id="testUsername" placeholder="用户名" value="admin">
+        <input type="password" id="testPassword" placeholder="密码" value="admin123">
+        <button onclick="testLogin()">测试登录</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>3. API 测试</h3>
+        <button onclick="testCurrentUserAPI()">测试当前用户API</button>
+        <button onclick="testCommunicationsAPI()">测试通信机API</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>4. 模拟 Dashboard 加载</h3>
+        <button onclick="simulateDashboardLoad()">模拟加载</button>
+    </div>
+
+    <div class="debug-section">
+        <h3>调试输出</h3>
+        <div id="output">等待操作...</div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+            output.textContent = `${prefix} [${timestamp}] ${message}\n` + output.textContent;
+        }
+
+        function checkStorage() {
+            log('=== 检查 localStorage ===');
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            if (token) {
+                log(`Token 存在: ${token.substring(0, 20)}...`, 'success');
+            } else {
+                log('Token 不存在', 'error');
+            }
+
+            if (username) {
+                log(`Username: ${username}`, 'success');
+            } else {
+                log('Username 不存在', 'error');
+            }
+
+            log(`所有 localStorage 数据: ${JSON.stringify(localStorage)}`);
+        }
+
+        function clearStorage() {
+            log('=== 清除 localStorage ===');
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            log('已清除 token 和 username');
+        }
+
+        function setTestUser() {
+            log('=== 设置测试用户 ===');
+            localStorage.setItem('token', 'test_token_12345');
+            localStorage.setItem('username', 'testuser');
+            log('已设置测试用户: testuser', 'success');
+        }
+
+        async function testLogin() {
+            const username = document.getElementById('testUsername').value;
+            const password = document.getElementById('testPassword').value;
+
+            log(`=== 测试登录: ${username} ===`);
+
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+
+                log('发送登录请求...');
+
+                const response = await fetch('/api/v1/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: formData
+                });
+
+                log(`响应状态: ${response.status} ${response.statusText}`);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`登录成功!`, 'success');
+                    log(`响应数据: ${JSON.stringify(data)}`);
+
+                    localStorage.setItem('token', data.access_token);
+                    localStorage.setItem('username', username);
+                    log(`已保存到 localStorage`, 'success');
+                } else {
+                    const error = await response.json();
+                    log(`登录失败: ${JSON.stringify(error)}`, 'error');
+                }
+            } catch (error) {
+                log(`请求异常: ${error.message}`, 'error');
+            }
+        }
+
+        async function testCurrentUserAPI() {
+            log('=== 测试当前用户 API ===');
+
+            const token = localStorage.getItem('token');
+            if (!token) {
+                log('没有 token，请先登录', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/v1/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                log(`响应状态: ${response.status} ${response.statusText}`);
+
+                if (response.ok) {
+                    const user = await response.json();
+                    log(`当前用户: ${JSON.stringify(user)}`, 'success');
+                } else {
+                    const error = await response.json();
+                    log(`API 错误: ${JSON.stringify(error)}`, 'error');
+                }
+            } catch (error) {
+                log(`请求异常: ${error.message}`, 'error');
+            }
+        }
+
+        async function testCommunicationsAPI() {
+            log('=== 测试通信机 API ===');
+
+            const token = localStorage.getItem('token');
+            if (!token) {
+                log('没有 token，请先登录', 'error');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/v1/communications', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                log(`响应状态: ${response.status} ${response.statusText}`);
+
+                if (response.ok) {
+                    const comms = await response.json();
+                    log(`通信机数量: ${comms.length}`, 'success');
+                    log(`通信机数据: ${JSON.stringify(comms)}`);
+                } else {
+                    const error = await response.json();
+                    log(`API 错误: ${JSON.stringify(error)}`, 'error');
+                }
+            } catch (error) {
+                log(`请求异常: ${error.message}`, 'error');
+            }
+        }
+
+        function simulateDashboardLoad() {
+            log('=== 模拟 Dashboard 加载 ===');
+
+            // 模拟 dashboard.js 的代码
+            const token = localStorage.getItem('token');
+
+            if (!token) {
+                log('未找到 token，应该重定向到登录页面', 'error');
+                return;
+            }
+
+            const username = localStorage.getItem('username');
+            log(`从 localStorage 获取的 username: ${username || 'null'}`);
+
+            // 检查 DOM 元素是否存在
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                currentUserEl.textContent = '用户: ' + (username || '未知');
+                log(`已更新 currentUser 元素内容: ${currentUserEl.textContent}`, 'success');
+            } else {
+                log('currentUser 元素不存在!', 'error');
+            }
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            log('页面加载完成，自动检查 localStorage...');
+            checkStorage();
+        });
+    </script>
+</body>
+</html>

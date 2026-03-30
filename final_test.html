@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>最终修复验证</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 700px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1E3A8A; }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+        .status.success {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+        .status.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .status.info {
+            background: #e3f2fd;
+            border-left-color: #2196F3;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        button.success {
+            background: #4CAF50;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        .console-output {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .console-line {
+            margin: 2px 0;
+            padding: 2px 0;
+        }
+        .console-line.info { color: #87ceeb; }
+        .console-line.success { color: #90ee90; }
+        .console-line.error { color: #ff6b6b; }
+        .test-results {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 最终修复验证</h1>
+
+        <div class="status info">
+            <strong>修复摘要:</strong>
+            <ul>
+                <li>✅ 修复了 dashboard.js 的作用域问题</li>
+                <li>✅ 移除了重复的 getHeaders 声明</li>
+                <li>✅ 修复了语法错误</li>
+                <li>✅ 优化了模块加载顺序</li>
+            </ul>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 1: 清除浏览器缓存</h3>
+            <button onclick="showCacheClearGuide()" class="danger">显示清除指南</button>
+            <div id="cacheGuide"></div>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 2: 跳转到Dashboard测试</h3>
+            <button onclick="testAndGoToDashboard()" class="success">测试并跳转</button>
+            <div id="testResults"></div>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>调试控制台</h3>
+            <button onclick="clearConsole()">清空控制台</button>
+            <button onclick="runFullDiagnostic()">完整诊断</button>
+            <div id="consoleOutput" class="console-output"></div>
+        </div>
+
+        <div class="test-results">
+            <h3>✅ 预期结果</h3>
+            <ul>
+                <li>没有 "getHeaders has already been declared" 错误</li>
+                <li>没有 "API_BASE is not defined" 错误</li>
+                <li>用户信息正确显示</li>
+                <li>导航栏可以正常切换</li>
+                <li>刷新页面后一切正常</li>
+            </ul>
+        </div>
+
+        <div class="status info">
+            <strong>🔄 刷新测试步骤:</strong>
+            <ol>
+                <li>跳转到Dashboard后，按 F5 刷新</li>
+                <li>重复刷新 3-5 次</li>
+                <li>观察浏览器控制台是否有错误</li>
+                <li>确认所有功能正常</li>
+            </ol>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const console = document.getElementById('consoleOutput');
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] ${message}`;
+            console.insertBefore(line, console.firstChild);
+        }
+
+        function clearConsole() {
+            document.getElementById('consoleOutput').innerHTML = '';
+        }
+
+        function showStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function showCacheClearGuide() {
+            const guide = `
+                <div class="status info">
+                    <strong>清除浏览器缓存指南:</strong><br><br>
+                    <strong>Chrome/Edge:</strong><br>
+                    1. 按 Ctrl + Shift + Delete<br>
+                    2. 选择"缓存的图片和文件"<br>
+                    3. 点击"清除数据"<br><br>
+                    <strong>Firefox:</strong><br>
+                    1. 按 Ctrl + Shift + Delete<br>
+                    2. 选择"缓存"<br>
+                    3. 点击"立即清除"<br><br>
+                    <strong>Safari:</strong><br>
+                    1. 按 Cmd + Option + E<br>
+                    2. 或在开发菜单中选择"清空缓存"<br><br>
+                    <strong>快速方法:</strong><br>
+                    按 Ctrl + Shift + F5 (Windows) 或 Cmd + Shift + R (Mac)
+                </div>
+            `;
+            document.getElementById('cacheGuide').innerHTML = guide;
+        }
+
+        async function testAndGoToDashboard() {
+            log('🔧 开始测试...', 'info');
+
+            // 检查localStorage
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+
+            if (!token) {
+                log('❌ 未找到token，需要先登录', 'error');
+                showStatus('testResults',
+                    '❌ 未找到token<br><a href="/login.html">请先登录</a>', 'error');
+                return;
+            }
+
+            log('✅ Token存在', 'success');
+            log(`👤 用户: ${username || '未知'}`, 'info');
+
+            // 测试API连接
+            try {
+                const response = await fetch('/api/v1/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const user = await response.json();
+                    log(`✅ API连接正常: ${user.username}`, 'success');
+
+                    showStatus('testResults',
+                        `✅ 所有测试通过！<br><br>
+                        <strong>用户:</strong> ${user.username}<br><br>
+                        <a href="/dashboard.html" style="display:inline-block;padding:10px 20px;background:#4CAF50;color:white;text-decoration:none;border-radius:5px;">跳转到Dashboard</a><br><br>
+                        <strong>跳转后请:</strong><br>
+                        1. 检查浏览器控制台是否还有错误<br>
+                        2. 按F5刷新页面测试<br>
+                        3. 确认所有功能正常`, 'success');
+                } else {
+                    throw new Error('API失败');
+                }
+            } catch (error) {
+                log(`❌ API测试失败: ${error.message}`, 'error');
+                showStatus('testResults', `❌ API测试失败: ${error.message}`, 'error');
+            }
+        }
+
+        function runFullDiagnostic() {
+            log('=== 开始完整诊断 ===', 'info');
+
+            // 1. 检查浏览器环境
+            log('1. 浏览器环境:', 'info');
+            log(`   User Agent: ${navigator.userAgent.substring(0, 50)}...`, 'info');
+            log(`   语言: ${navigator.language}`, 'info');
+
+            // 2. 检查localStorage
+            log('2. 本地存储:', 'info');
+            const token = localStorage.getItem('token');
+            const username = localStorage.getItem('username');
+            log(`   Token: ${token ? '✅ 存在' : '❌ 不存在'}`, token ? 'success' : 'error');
+            log(`   Username: ${username || '❌ 不存在'}`, username ? 'success' : 'error');
+
+            // 3. 检查shared模块
+            log('3. Shared模块:', 'info');
+            if (window.shared) {
+                log('   ✅ window.shared 存在', 'success');
+                log(`   API_BASE: ${window.shared.API_BASE}`, 'info');
+                log(`   getHeaders: ${typeof window.shared.getHeaders}`, 'info');
+            } else {
+                log('   ❌ window.shared 不存在', 'error');
+            }
+
+            // 4. 检查其他模块
+            log('4. 其他模块:', 'info');
+            const modules = ['communications', 'checks', 'checkitems', 'snapshots', 'reports'];
+            modules.forEach(moduleName => {
+                if (window[moduleName]) {
+                    log(`   ✅ window.${moduleName} 存在`, 'success');
+                } else {
+                    log(`   ❌ window.${moduleName} 不存在`, 'error');
+                }
+            });
+
+            // 5. 检查可能的错误
+            log('5. 错误检查:', 'info');
+            const errorCount = window.console.error ? '无法检测' : '无';
+            log(`   控制台错误数量: ${errorCount}`, 'info');
+
+            log('=== 诊断完成 ===', 'success');
+        }
+
+        // 页面加载时自动运行诊断
+        window.addEventListener('load', () => {
+            log('📋 测试页面加载完成', 'info');
+            log('💡 建议先清除浏览器缓存，然后点击"测试并跳转"', 'info');
+        });
+    </script>
+</body>
+</html>

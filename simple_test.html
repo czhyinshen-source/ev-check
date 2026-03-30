@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>简单用户显示测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .header {
+            background: #1E3A8A;
+            color: white;
+            padding: 15px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .test-box {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .test-box h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        #console-output {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px 5px;
+            border-left: 3px solid #ccc;
+        }
+        .log-entry.info {
+            border-left-color: #2196F3;
+            background: #e3f2fd;
+        }
+        .log-entry.success {
+            border-left-color: #4CAF50;
+            background: #e8f5e9;
+        }
+        .log-entry.error {
+            border-left-color: #f44336;
+            background: #ffebee;
+        }
+    </style>
+</head>
+<body>
+    <!-- 模拟 dashboard.html 的头部 -->
+    <div class="header">
+        <h1>运行环境检查系统 - 测试</h1>
+        <div class="header-right">
+            <span id="currentUser">用户: -</span>
+            <button class="logout-btn" onclick="testLogout()">退出登录</button>
+        </div>
+    </div>
+
+    <div class="test-box">
+        <h3>1. 基础测试</h3>
+        <button onclick="testBasic()">基础测试</button>
+        <button onclick="testLocalStorage()">测试 localStorage</button>
+        <button onclick="testElementExists()">测试元素存在</button>
+    </div>
+
+    <div class="test-box">
+        <h3>2. 模拟登录</h3>
+        <input type="text" id="testUsername" placeholder="用户名" value="admin">
+        <input type="password" id="testPassword" placeholder="密码" value="admin123">
+        <button onclick="performLogin()">模拟登录</button>
+        <button onclick="clearUserData()">清除数据</button>
+    </div>
+
+    <div class="test-box">
+        <h3>3. 模拟 Dashboard 加载</h3>
+        <button onclick="simulateDashboardJS()">模拟 dashboard.js 逻辑</button>
+        <button onclick="updateUserDisplay()">直接更新显示</button>
+    </div>
+
+    <div class="test-box">
+        <h3>调试控制台</h3>
+        <button onclick="clearConsole()">清空控制台</button>
+        <div id="console-output"></div>
+    </div>
+
+    <script>
+        // 简单的日志函数
+        function log(message, type = 'info') {
+            const console = document.getElementById('console-output');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            console.insertBefore(entry, console.firstChild);
+
+            // 同时输出到浏览器控制台
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+
+        function clearConsole() {
+            document.getElementById('console-output').innerHTML = '';
+        }
+
+        // 基础测试
+        function testBasic() {
+            log('=== 开始基础测试 ===', 'info');
+            log('页面标题: ' + document.title);
+            log('页面 URL: ' + window.location.href);
+            log('DOM 就绪状态: ' + document.readyState);
+            log('User Agent: ' + navigator.userAgent);
+        }
+
+        // 测试 localStorage
+        function testLocalStorage() {
+            log('=== 测试 localStorage ===', 'info');
+
+            try {
+                // 测试写入
+                localStorage.setItem('test_key', 'test_value');
+                log('✅ localStorage 写入测试成功', 'success');
+
+                // 测试读取
+                const value = localStorage.getItem('test_key');
+                log(`✅ localStorage 读取测试成功: ${value}`, 'success');
+
+                // 清理
+                localStorage.removeItem('test_key');
+                log('✅ localStorage 删除测试成功', 'success');
+
+                // 检查现有数据
+                const token = localStorage.getItem('token');
+                const username = localStorage.getItem('username');
+                log(`Token: ${token ? '存在 (' + token.substring(0, 10) + '...)' : '不存在'}`, token ? 'success' : 'error');
+                log(`Username: ${username || '不存在'}`, username ? 'success' : 'error');
+
+            } catch (error) {
+                log(`❌ localStorage 测试失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 测试元素存在
+        function testElementExists() {
+            log('=== 测试元素存在性 ===', 'info');
+
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                log(`✅ currentUser 元素存在`, 'success');
+                log(`当前内容: "${currentUserEl.textContent}"`, 'info');
+                log(`元素 ID: ${currentUserEl.id}`, 'info');
+                log(`元素标签: ${currentUserEl.tagName}`, 'info');
+            } else {
+                log(`❌ currentUser 元素不存在`, 'error');
+            }
+        }
+
+        // 模拟登录
+        async function performLogin() {
+            const username = document.getElementById('testUsername').value;
+            const password = document.getElementById('testPassword').value;
+
+            log(`=== 模拟登录: ${username} ===`, 'info');
+
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+
+                log('发送登录请求...', 'info');
+
+                const response = await fetch('/api/v1/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: formData
+                });
+
+                log(`响应状态: ${response.status} ${response.statusText}`, 'info');
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ 登录成功!`, 'success');
+                    log(`Token: ${data.access_token.substring(0, 20)}...`, 'success');
+
+                    // 存储到 localStorage (模拟 login.html 的行为)
+                    localStorage.setItem('token', data.access_token);
+                    localStorage.setItem('username', username);
+
+                    log(`✅ 已保存到 localStorage`, 'success');
+
+                    // 自动更新显示
+                    setTimeout(() => {
+                        simulateDashboardJS();
+                    }, 500);
+
+                } else {
+                    const error = await response.json();
+                    log(`❌ 登录失败: ${error.detail || '未知错误'}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ 登录异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 清除用户数据
+        function clearUserData() {
+            log('=== 清除用户数据 ===', 'info');
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+            log('✅ 已清除 token 和 username', 'success');
+
+            // 重置显示
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                currentUserEl.textContent = '用户: -';
+                log('✅ 已重置用户显示', 'success');
+            }
+        }
+
+        // 模拟 dashboard.js 的逻辑
+        function simulateDashboardJS() {
+            log('=== 模拟 dashboard.js 逻辑 ===', 'info');
+
+            // 模拟 dashboard.js 的代码
+            const token = localStorage.getItem('token');
+
+            if (!token) {
+                log('❌ 未找到 token，应该重定向到登录页面', 'error');
+                return;
+            }
+
+            log(`✅ Token 存在: ${token.substring(0, 10)}...`, 'success');
+
+            const username = localStorage.getItem('username');
+            log(`从 localStorage 获取的 username: "${username}"`, username ? 'success' : 'error');
+
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                const displayText = '用户: ' + (username || '未知');
+                currentUserEl.textContent = displayText;
+                log(`✅ 已更新 currentUser 元素: "${displayText}"`, 'success');
+            } else {
+                log('❌ currentUser 元素不存在!', 'error');
+            }
+        }
+
+        // 直接更新显示
+        function updateUserDisplay() {
+            log('=== 直接更新显示 ===', 'info');
+
+            const username = localStorage.getItem('username');
+            const currentUserEl = document.getElementById('currentUser');
+
+            if (currentUserEl) {
+                currentUserEl.textContent = '用户: ' + (username || '未知');
+                log(`✅ 显示已更新: "${currentUserEl.textContent}"`, 'success');
+            } else {
+                log('❌ 元素不存在', 'error');
+            }
+        }
+
+        // 测试退出
+        function testLogout() {
+            log('=== 退出登录 ===', 'info');
+            localStorage.removeItem('token');
+            localStorage.removeItem('username');
+
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                currentUserEl.textContent = '用户: -';
+            }
+
+            log('✅ 已退出登录', 'success');
+        }
+
+        // 页面加载时自动测试
+        window.addEventListener('DOMContentLoaded', () => {
+            log('=== 页面 DOMContentLoaded 事件触发 ===', 'info');
+            testBasic();
+            testElementExists();
+            testLocalStorage();
+
+            // 如果有用户数据，自动更新显示
+            const username = localStorage.getItem('username');
+            if (username) {
+                log(`检测到已登录用户: ${username}`, 'success');
+                simulateDashboardJS();
+            }
+        });
+    </script>
+</body>
+</html>

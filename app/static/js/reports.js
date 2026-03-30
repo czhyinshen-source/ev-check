@@ -1,6 +1,5 @@
 // 报告管理模块
 // 全局变量
-const API_BASE = '';
 let currentPage = 1;
 let pageSize = 10;
 let totalItems = 0;
@@ -9,7 +8,10 @@ let allReports = [];
 
 // 初始化（仅在浏览器环境中执行）
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    document.addEventListener('DOMContentLoaded', function() {
+    // 等待所有模块加载完成
+    document.addEventListener('modulesLoaded', function() {
+        console.log('🔧 Reports模块开始初始化...');
+
         // 检查登录状态
         const token = localStorage.getItem('token');
         if (!token) {
@@ -17,25 +19,52 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
             return;
         }
 
-        // 显示当前用户
-        const username = localStorage.getItem('username') || '未知用户';
-        const currentUserEl = document.getElementById('currentUser');
-        if (currentUserEl) {
-            currentUserEl.textContent = `当前用户: ${username}`;
-        }
+        // 延迟执行，确保DOM完全准备就绪
+        setTimeout(function() {
+            // 显示当前用户
+            const username = localStorage.getItem('username') || '未知用户';
+            const currentUserEl = document.getElementById('currentUser');
+            if (currentUserEl) {
+                currentUserEl.textContent = `当前用户: ${username}`;
+            }
 
-        // 加载规则列表（用于筛选）
-        loadRulesForFilter();
+            // 检查报告相关的DOM元素是否存在
+            const reportElements = ['startTime', 'endTime', 'ruleFilter', 'statusFilter'];
+            const elementsExist = reportElements.some(id => document.getElementById(id));
 
-        // 加载报告列表
-        loadBatchReports();
+            if (elementsExist) {
+                // 加载规则列表（用于筛选）
+                loadRulesForFilter();
 
-        // 绑定筛选事件
-        document.getElementById('startTime').addEventListener('change', debounce(loadBatchReports, 300));
-        document.getElementById('endTime').addEventListener('change', debounce(loadBatchReports, 300));
-        document.getElementById('ruleFilter').addEventListener('change', debounce(loadBatchReports, 300));
-        document.getElementById('statusFilter').addEventListener('change', debounce(loadBatchReports, 300));
+                // 加载报告列表
+                loadBatchReports();
+
+                // 绑定筛选事件（安全检查）
+                const bindEvent = (id, event, handler) => {
+                    const el = document.getElementById(id);
+                    if (el) {
+                        el.addEventListener(event, handler);
+                    } else {
+                        console.warn(`元素 ${id} 不存在，跳过事件绑定`);
+                    }
+                };
+
+                bindEvent('startTime', 'change', debounce(loadBatchReports, 300));
+                bindEvent('endTime', 'change', debounce(loadBatchReports, 300));
+                bindEvent('ruleFilter', 'change', debounce(loadBatchReports, 300));
+                bindEvent('statusFilter', 'change', debounce(loadBatchReports, 300));
+
+                console.log('✅ Reports模块初始化完成');
+            } else {
+                console.log('ℹ️  当前页面不是报告页面，跳过报告初始化');
+            }
+        }, 100);
     });
+
+    // 备用方案：如果事件已经触发
+    if (document.readyState === 'complete') {
+        console.log('ℹ️  Reports模块等待下次访问时初始化');
+    }
 }
 
 // 防抖函数
@@ -50,14 +79,17 @@ function debounce(func, wait) {
 // 加载规则列表（用于筛选）
 async function loadRulesForFilter() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/check-rules`, {
-            headers: getHeaders()
+        const { API_BASE, getHeaders } = window.shared;
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules`, {
+            headers: window.shared.getHeaders()
         });
         if (!res.ok) return;
         const rules = await res.json();
         const select = document.getElementById('ruleFilter');
-        select.innerHTML = `<option value="">全部规则</option>` +
-            rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+        if (select) {
+            select.innerHTML = `<option value="">全部规则</option>` +
+                rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+        }
     } catch (e) {
         console.error('加载规则列表失败:', e);
     }
@@ -66,10 +98,10 @@ async function loadRulesForFilter() {
 // 获取筛选条件
 function getFilters() {
     return {
-        startTime: document.getElementById('startTime').value,
-        endTime: document.getElementById('endTime').value,
-        ruleId: document.getElementById('ruleFilter').value,
-        status: document.getElementById('statusFilter').value
+        startTime: document.getElementById('startTime')?.value || '',
+        endTime: document.getElementById('endTime')?.value || '',
+        ruleId: document.getElementById('ruleFilter')?.value || '',
+        status: document.getElementById('statusFilter')?.value || ''
     };
 }
 
@@ -107,7 +139,7 @@ async function loadBatchReports() {
         }
 
         const res = await fetch(url, {
-            headers: getHeaders()
+            headers: window.shared.getHeaders()
         });
 
         if (!res.ok) {
@@ -339,19 +371,13 @@ function logout() {
     window.location.href = '/login.html';
 }
 
-// 获取请求头
-function getHeaders() {
-    const token = localStorage.getItem('token');
-    return {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-    };
-}
+// 注意: getHeaders 已在 shared.js 中定义，使用 window.shared.getHeaders()
+// 这里移除重复的 getHeaders 函数声明
 
 // 加载报告列表
 async function loadReports() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks`, { headers: window.shared.getHeaders() });
         allReports = await res.json();
         renderReports(allReports);
     } catch (e) { console.error(e); }
@@ -392,7 +418,7 @@ function searchReports() {
 // 查看报告详情
 async function viewReportDetail(id) {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks/${id}`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/${id}`, { headers: window.shared.getHeaders() });
         const data = await res.json();
         const content = document.getElementById('reportDetailContent');
         const statusText = data.status === 'success' ? '通过' : data.status === 'running' ? '进行中' : data.status === 'failed' ? '失败' : data.status;
@@ -438,7 +464,7 @@ async function viewReportDetail(id) {
 async function deleteCheckResult(id) {
     if (!confirm('确定删除此检查结果?')) return;
     try {
-        await fetch(`${API_BASE}/api/v1/checks/${id}`, { method: 'DELETE', headers: getHeaders() });
+        await fetch(`${window.shared.API_BASE}/api/v1/checks/${id}`, { method: 'DELETE', headers: window.shared.getHeaders() });
         loadReports();
     } catch (e) { console.error(e); }
 }

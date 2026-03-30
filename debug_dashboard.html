@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>调试页面</title>
+</head>
+<body>
+    <h1>调试信息</h1>
+    <div id="debugInfo"></div>
+
+    <script src="/static/js/shared.js"></script>
+    <script>
+        const debugInfo = document.getElementById('debugInfo');
+
+        function addLog(message) {
+            debugInfo.innerHTML += '<p>' + message + '</p>';
+            console.log(message);
+        }
+
+        addLog('1. 检查 localStorage...');
+        const token = localStorage.getItem('token');
+        const username = localStorage.getItem('username');
+        addLog('Token: ' + (token ? '存在' : '不存在'));
+        addLog('Username: ' + (username || '未设置'));
+
+        addLog('2. 检查 window.shared...');
+        addLog('window.shared 存在: ' + (window.shared ? '是' : '否'));
+        if (window.shared) {
+            addLog('getHeaders 存在: ' + (window.shared.getHeaders ? '是' : '否'));
+            addLog('logout 存在: ' + (window.shared.logout ? '是' : '否'));
+        }
+
+        addLog('3. 测试 API 调用...');
+        if (window.shared && window.shared.getHeaders) {
+            fetch('/api/v1/communications', {
+                headers: window.shared.getHeaders()
+            })
+            .then(response => {
+                addLog('API响应状态: ' + response.status);
+                return response.json();
+            })
+            .then(data => {
+                addLog('通信机数量: ' + data.length);
+                addLog('通信机数据: ' + JSON.stringify(data));
+            })
+            .catch(error => {
+                addLog('API错误: ' + error.message);
+            });
+        }
+
+        addLog('4. 检查 communications 模块...');
+        addLog('window.communications 存在: ' + (window.communications ? '是' : '否'));
+        if (window.communications) {
+            addLog('loadCommunications 存在: ' + (window.communications.loadCommunications ? '是' : '否'));
+        }
+    </script>
+</body>
+</html>

@@ -26,7 +26,7 @@ function closeCheckModal() {
 // 加载检查规则
 async function loadCheckRules() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/check-rules`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules`, { headers: window.shared.getHeaders() });
         const rules = await res.json();
         const select = document.getElementById('checkRule');
         select.innerHTML = `<option value="">请选择规则</option>` + rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
@@ -36,7 +36,7 @@ async function loadCheckRules() {
 // 加载通信机到检查执行模态框
 async function loadCommunicationsForCheck() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() });
         const comms = await res.json();
         const select = document.getElementById('checkCommunication');
         select.innerHTML = `<option value="">请选择通信机</option>` + comms.map(c => `<option value="${c.id}">${c.name} (${c.ip_address})</option>`).join('');
@@ -46,7 +46,7 @@ async function loadCommunicationsForCheck() {
 // 加载快照到检查执行模态框
 async function loadSnapshotsForCheck() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/snapshots`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/snapshots`, { headers: window.shared.getHeaders() });
         const snapshots = await res.json();
         const select = document.getElementById('checkSnapshot');
         select.innerHTML = `<option value="">请选择快照</option>` + snapshots.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
@@ -64,7 +64,7 @@ async function startCheck() {
     if (!snapshotId) { alert('请选择快照'); return; }
 
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks/start`, {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/start`, {
             method: 'POST',
             headers: { ...getHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -108,7 +108,7 @@ function startProgressPolling(resultId) {
 // 轮询检查进度
 async function pollProgress(resultId) {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks/${resultId}/progress`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/${resultId}/progress`, { headers: window.shared.getHeaders() });
         if (!res.ok) {
             clearInterval(progressPollInterval);
             return;
@@ -153,7 +153,7 @@ function updateProgressDisplay(data) {
 // 加载检查结果
 async function loadCheckResults() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks`, { headers: window.shared.getHeaders() });
         const data = await res.json();
         const tbody = document.getElementById('checkTable');
         tbody.innerHTML = data.map(c => `
@@ -186,9 +186,9 @@ async function cancelCheck(resultId) {
     if (!confirm('确定要取消该检查任务吗？')) return;
 
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks/${resultId}`, {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/${resultId}`, {
             method: 'DELETE',
-            headers: getHeaders()
+            headers: window.shared.getHeaders()
         });
 
         if (res.ok || res.status === 204) {
@@ -211,7 +211,7 @@ async function cancelCheck(resultId) {
 async function deleteCheckResult(id) {
     if (!confirm('确定删除此检查结果?')) return;
     try {
-        await fetch(`${API_BASE}/api/v1/checks/${id}`, { method: 'DELETE', headers: getHeaders() });
+        await fetch(`${window.shared.API_BASE}/api/v1/checks/${id}`, { method: 'DELETE' });
         loadCheckResults();
     } catch (e) { console.error(e); }
 }
@@ -219,7 +219,7 @@ async function deleteCheckResult(id) {
 // 查看检查结果详情
 async function viewCheckResult(id) {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks/${id}`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/${id}`, { headers: window.shared.getHeaders() });
         const data = await res.json();
         const content = document.getElementById('reportDetailContent');
 
@@ -345,7 +345,7 @@ function getDetailStatusBadge(status) {
 // 加载当前任务状态
 async function loadCurrentTask() {
     try {
-        const res = await fetch(`${API_BASE}/api/v1/checks/current`, { headers: getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/current`, { headers: window.shared.getHeaders() });
         const data = await res.json();
 
         const progressSection = document.getElementById('currentTaskProgress');
@@ -381,8 +381,8 @@ async function loadCurrentTask() {
 async function loadRulesAndCommsForModal() {
     try {
         const [rulesRes, commsRes] = await Promise.all([
-            fetch(`${API_BASE}/api/v1/check-rules`, { headers: getHeaders() }),
-            fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() })
+            fetch(`${window.shared.API_BASE}/api/v1/check-rules`, { headers: window.shared.getHeaders() }),
+            fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() })
         ]);
         const rules = await rulesRes.json();
         const comms = await commsRes.json();

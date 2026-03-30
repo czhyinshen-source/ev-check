@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修复验证页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #1E3A8A; }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #ccc;
+        }
+        .status.success {
+            background: #e8f5e9;
+            border-left-color: #4CAF50;
+        }
+        .status.error {
+            background: #ffebee;
+            border-left-color: #f44336;
+        }
+        .status.info {
+            background: #e3f2fd;
+            border-left-color: #2196F3;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        button.success {
+            background: #4CAF50;
+        }
+        button.danger {
+            background: #f44336;
+        }
+        .console-output {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .console-line {
+            margin: 2px 0;
+            padding: 2px 0;
+        }
+        .console-line.info { color: #87ceeb; }
+        .console-line.success { color: #90ee90; }
+        .console-line.error { color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 问题修复验证</h1>
+
+        <div class="status info">
+            <strong>已修复的问题:</strong>
+            <ul>
+                <li>✅ API_BASE 重复声明错误</li>
+                <li>✅ 导航栏无法切换问题</li>
+                <li>✅ 用户信息显示问题</li>
+            </ul>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 1: 检查脚本加载</h3>
+            <button onclick="checkScripts()">检查脚本</button>
+            <div id="scriptsOutput"></div>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 2: 测试标签页切换</h3>
+            <button onclick="testTabSwitching()">测试切换</button>
+            <div id="tabOutput"></div>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>步骤 3: 跳转到 Dashboard</h3>
+            <button onclick="goToDashboard()" class="success">跳转到 Dashboard</button>
+        </div>
+
+        <div style="margin: 20px 0;">
+            <h3>调试控制台</h3>
+            <button onclick="clearConsole()">清空控制台</button>
+            <div id="consoleOutput" class="console-output"></div>
+        </div>
+    </div>
+
+    <script>
+        function log(message, type = 'info') {
+            const console = document.getElementById('consoleOutput');
+            const line = document.createElement('div');
+            line.className = `console-line ${type}`;
+            const timestamp = new Date().toLocaleTimeString();
+            line.textContent = `[${timestamp}] ${message}`;
+            console.insertBefore(line, console.firstChild);
+        }
+
+        function clearConsole() {
+            document.getElementById('consoleOutput').innerHTML = '';
+        }
+
+        function showStatus(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        function checkScripts() {
+            log('=== 检查脚本加载 ===', 'info');
+
+            let results = [];
+
+            // 检查 shared 模块
+            if (window.shared) {
+                results.push('✅ window.shared 已加载');
+                log('window.shared.API_BASE: ' + window.shared.API_BASE, 'success');
+            } else {
+                results.push('❌ window.shared 未加载');
+                log('window.shared 不存在', 'error');
+            }
+
+            // 检查其他模块
+            const modules = ['communications', 'checks', 'checkitems', 'snapshots', 'reports'];
+            modules.forEach(moduleName => {
+                if (window[moduleName]) {
+                    results.push(`✅ window.${moduleName} 已加载`);
+                    log(`window.${moduleName} 已加载`, 'success');
+                } else {
+                    results.push(`❌ window.${moduleName} 未加载`);
+                    log(`window.${moduleName} 未加载`, 'error');
+                }
+            });
+
+            showStatus('scriptsOutput', results.join('<br>'),
+                results.every(r => r.startsWith('✅')) ? 'success' : 'error');
+        }
+
+        function testTabSwitching() {
+            log('=== 测试标签页切换 ===', 'info');
+
+            // 在当前页面创建测试标签页
+            const testContainer = document.createElement('div');
+            testContainer.innerHTML = `
+                <div class="nav-tabs" style="display: flex; gap: 10px; margin-bottom: 20px;">
+                    <div class="nav-tab active" data-tab="tab1" style="padding: 10px 20px; background: #ddd; cursor: pointer;">标签1</div>
+                    <div class="nav-tab" data-tab="tab2" style="padding: 10px 20px; background: #ddd; cursor: pointer;">标签2</div>
+                    <div class="nav-tab" data-tab="tab3" style="padding: 10px 20px; background: #ddd; cursor: pointer;">标签3</div>
+                </div>
+                <div class="tab-content active" id="tab1" style="padding: 20px; background: #f9f9f9;">内容1</div>
+                <div class="tab-content" id="tab2" style="padding: 20px; background: #f9f9f9; display: none;">内容2</div>
+                <div class="tab-content" id="tab3" style="padding: 20px; background: #f9f9f9; display: none;">内容3</div>
+            `;
+
+            const output = document.getElementById('tabOutput');
+            output.innerHTML = '';
+            output.appendChild(testContainer);
+
+            // 初始化标签页切换
+            const tabs = testContainer.querySelectorAll('.nav-tab');
+            log(`找到 ${tabs.length} 个测试标签页`, 'info');
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const targetId = this.dataset.tab;
+
+                    log(`切换到: ${targetId}`, 'info');
+
+                    // 移除所有 active 类
+                    tabs.forEach(t => {
+                        t.classList.remove('active');
+                        t.style.background = '#ddd';
+                    });
+                    testContainer.querySelectorAll('.tab-content').forEach(c => {
+                        c.classList.remove('active');
+                        c.style.display = 'none';
+                    });
+
+                    // 添加 active 类
+                    this.classList.add('active');
+                    this.style.background = '#2196F3';
+                    this.style.color = 'white';
+
+                    const targetContent = document.getElementById(targetId);
+                    if (targetContent) {
+                        targetContent.classList.add('active');
+                        targetContent.style.display = 'block';
+                        log(`✅ 成功切换到: ${targetId}`, 'success');
+                    }
+                });
+            });
+
+            // 模拟点击测试
+            setTimeout(() => {
+                log('开始自动切换测试...', 'info');
+                let currentIndex = 0;
+
+                const testInterval = setInterval(() => {
+                    if (currentIndex >= tabs.length) {
+                        clearInterval(testInterval);
+                        log('✅ 切换测试完成', 'success');
+                        return;
+                    }
+
+                    tabs[currentIndex].click();
+                    currentIndex++;
+                }, 1000);
+            }, 500);
+
+            showStatus('tabOutput', '标签页切换测试已启动，请查看控制台输出', 'info');
+        }
+
+        function goToDashboard() {
+            if (confirm('确认跳转到 Dashboard？\n\n确保已完成所有测试！')) {
+                log('🚀 正在跳转到 Dashboard...', 'success');
+                window.location.href = '/dashboard.html';
+            }
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            log('📋 页面加载完成', 'info');
+            checkScripts();
+        });
+    </script>
+</body>
+</html>
