@@ -4,439 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>运行环境检查系统 - 控制台</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Microsoft YaHei', Arial, Consolas, sans-serif;
-            background: #f5f7fa;
-            min-height: 100vh;
-        }
-        .header {
-            background: #1E3A8A;
-            color: white;
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .header h1 { font-size: 20px; }
-        .header-right { display: flex; align-items: center; gap: 20px; }
-        .header-right span { font-size: 14px; }
-        .logout-btn {
-            background: rgba(255,255,255,0.2);
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        .container { max-width: 1600px; margin: 20px auto; padding: 0 20px; }
-        
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat-card {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .stat-card h3 { color: #666; font-size: 13px; margin-bottom: 8px; }
-        .stat-card .value { font-size: 28px; font-weight: bold; color: #333; }
-        .stat-card .value.success { color: #52c41a; }
-        .stat-card .value.warning { color: #faad14; }
-        .stat-card .value.error { color: #f5222d; }
-        
-        .main-content {
-            display: flex;
-            gap: 20px;
-        }
-        
-        .sidebar {
-            width: 280px;
-            background: white;
-            border-radius: 8px;
-            padding: 15px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            flex-shrink: 0;
-        }
-        .sidebar-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        .sidebar-header h3 { font-size: 16px; color: #333; }
-        
-        .group-tree { list-style: none; }
-        .group-tree li { margin: 5px 0; }
-        .group-item {
-            padding: 8px 12px;
-            border-radius: 6px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: background 0.2s;
-            justify-content: space-between;
-        }
-        .group-item:hover { background: #f5f7fa; }
-        .group-item.active { background: #e6f7ff; color: #1890ff; }
-        .group-item .icon { font-size: 16px; }
-        .group-item .count { margin-left: auto; font-size: 12px; color: #999; }
-        .list-actions {
-            display: flex;
-            gap: 4px;
-            opacity: 0;
-            transition: opacity 0.2s;
-        }
-        .group-item:hover .list-actions {
-            opacity: 1;
-        }
-        .btn-xs {
-            padding: 2px 6px;
-            font-size: 12px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            background: transparent;
-        }
-        .btn-xs:hover {
-            background: rgba(0, 0, 0, 0.1);
-        }
-        
-        .content { flex: 1; }
-        
-        .section {
-            background: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #eee;
-        }
-        .section-header h2 {
-            font-size: 16px;
-            color: #333;
-            margin: 0;
-        }
-        
-        .action-bar {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-        }
-        .btn {
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.2s;
-        }
-        .btn-primary { background: #C4181F; color: white; }
-        .btn-primary:hover { background: #A0141A; }
-        .btn-success { background: #52c41a; color: white; }
-        .btn-success:hover { background: #389e0d; }
-        .btn-danger { background: #f5222d; color: white; }
-        .btn-default { background: #fff; border: 1px solid #d9d9d9; }
-        
-        .search-box {
-            flex: 1;
-            min-width: 200px;
-            padding: 8px 12px;
-            border: 1px solid #d9d9d9;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; }
-        th { background: #fafafa; font-weight: 500; color: #666; font-size: 13px; }
-        td { font-size: 13px; color: #333; }
-        tr:hover td { background: #fafafa; }
-        
-        .status-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-        .status-badge.success { background: #f6ffed; color: #52c41a; }
-        .status-badge.warning { background: #fffbe6; color: #faad14; }
-        .status-badge.error { background: #fff2f0; color: #f5222d; }
-        .status-badge.info { background: #e6f7ff; color: #1890ff; }
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-        .status-dot.online { background: #52c41a; }
-        .status-dot.offline { background: #999; }
-        .status-dot.unknown { background: #faad14; }
-        
-        .btn-sm {
-            padding: 4px 8px;
-            font-size: 12px;
-            margin-right: 5px;
-        }
-        
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
-            justify-content: center;
-            align-items: center;
-            z-index: 1000;
-        }
-        .modal.active { display: flex; }
-        .modal-content {
-            background: white;
-            border-radius: 8px;
-            padding: 24px;
-            width: 100%;
-            max-width: 500px;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        .modal-header h3 { font-size: 16px; }
-        .modal-close {
-            background: none;
-            border: none;
-            font-size: 24px;
-            cursor: pointer;
-            color: #999;
-        }
-        .form-group { margin-bottom: 15px; }
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-size: 14px;
-            color: #333;
-            font-weight: 500;
-        }
-        .form-group input, .form-group select {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #d9d9d9;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        .form-group input:focus, .form-group select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        .form-row { display: flex; gap: 15px; }
-        .form-row .form-group { flex: 1; }
-        
-        .nav-tabs {
-            display: flex;
-            border-bottom: 1px solid #eee;
-            margin-bottom: 15px;
-            background: #1E3A8A;
-        }
-        .nav-tab {
-            padding: 12px 24px;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            color: white;
-            font-size: 14px;
-            transition: all 0.3s;
-        }
-        .nav-tab:hover {
-            background: #3B82F6;
-        }
-        .nav-tab.active {
-            border-bottom-color: #C4181F;
-            background: #C4181F;
-            color: white;
-        }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        
-        .loading {
-            text-align: center;
-            padding: 40px;
-            color: #999;
-        }
-        
-        .empty-state {
-            text-align: center;
-            padding: 40px;
-            color: #999;
-        }
-
-        /* 检查项属性分组样式 */
-        .attr-group {
-            margin-bottom: 12px;
-            padding: 10px;
-            background: #fafafa;
-            border-radius: 6px;
-            border: 1px solid #eee;
-        }
-        .attr-group > label {
-            font-weight: 500;
-        }
-        .attr-fields {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px dashed #ddd;
-        }
-        .attr-group input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
-        }
-        .attr-group label input[type="checkbox"] + span {
-            font-weight: normal;
-        }
-
-        /* 表单内部字段样式 */
-        .attr-fields .form-group {
-            margin-bottom: 10px;
-        }
-        .attr-fields .form-group:last-child {
-            margin-bottom: 0;
-        }
-        .attr-fields .form-group label {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 4px;
-        }
-        .attr-fields input,
-        .attr-fields select,
-        .attr-fields textarea {
-            padding: 6px 10px;
-            font-size: 13px;
-        }
-        .attr-fields .form-row {
-            gap: 10px;
-        }
-
-        /* 描述文字样式 */
-        .form-group small {
-            display: block;
-            margin-top: 4px;
-            font-size: 12px;
-            color: #999;
-        }
-
-        /* 快照构建样式 */
-        .build-group-item {
-            margin-bottom: 10px;
-            border: 1px solid #eee;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-        .build-group-item .group-header {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            background: #f5f7fa;
-            cursor: pointer;
-        }
-        .build-group-item .group-header:hover {
-            background: #e6f7ff;
-        }
-        .build-group-item .group-name {
-            flex: 1;
-            font-weight: 500;
-        }
-        .build-group-item .group-communications {
-            padding: 10px 12px 10px 36px;
-        }
-        .build-group-item .comm-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 4px 0;
-            cursor: pointer;
-        }
-        .build-group-item .check-list-selector {
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px dashed #ddd;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .build-group-item .check-list-selector select {
-            flex: 1;
-            padding: 6px 10px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-        }
-
-        /* 进度显示样式 */
-        .build-group-progress {
-            margin-bottom: 10px;
-            border: 1px solid #eee;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-        .build-group-progress .group-title {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 12px;
-            background: #fafafa;
-            cursor: pointer;
-        }
-        .build-group-progress .group-comm-progress {
-            padding: 8px 12px 8px 32px;
-        }
-        .build-group-progress .comm-progress-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 4px 0;
-            font-size: 13px;
-        }
-        .comm-status-success { color: #52c41a; }
-        .comm-status-running { color: #1890ff; }
-        .comm-status-failed { color: #f5222d; }
-        .comm-status-pending { color: #999; }
-        .comm-status-text { color: #999; margin-left: auto; font-size: 12px; }
-        .status-completed { color: #52c41a; }
-        .status-running { color: #1890ff; }
-        .status-failed { color: #f5222d; }
-    </style>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/snapshot-detail.css?v=1">
 </head>
 <body>
     <div class="header">
         <h1>运行环境检查系统</h1>
         <div class="header-right">
-            <span id="currentUser">用户: -</span>
+            <span id="currentUser" style="margin-right: 15px;">用户: -</span>
             <button class="logout-btn" onclick="logout()">退出登录</button>
         </div>
     </div>
-    
+
     <div class="container">
         <div class="stats">
             <div class="stat-card">
@@ -493,9 +72,20 @@
                             <button class="btn btn-primary" onclick="openBatchDeployModal()">批量部署公钥</button>
                             <button class="btn btn-success" onclick="refreshData()">刷新</button>
                         </div>
+                        <!-- 批量操作工具栏 -->
+                        <div class="batch-toolbar" id="batchToolbar" style="display: none; background: #f0f7ff; padding: 10px; margin-bottom: 10px; border-radius: 4px; align-items: center; gap: 10px;">
+                            <span>已选择 <strong id="selectedCount">0</strong> 台通信机</span>
+                            <select id="batchTargetGroup" class="form-control" style="width: 150px;">
+                                <option value="">选择目标分组</option>
+                            </select>
+                            <button class="btn btn-primary btn-sm" onclick="batchMoveToGroup()">移动到分组</button>
+                            <button class="btn btn-warning btn-sm" onclick="batchTestConnections()">批量测试连接</button>
+                            <button class="btn btn-danger btn-sm" onclick="batchDeleteCommunications()">批量删除</button>
+                        </div>
                         <table>
                             <thead>
                                 <tr>
+                                    <th style="width: 40px;"><input type="checkbox" id="selectAllComms" onchange="toggleSelectAll(event)"></th>
                                     <th>名称</th>
                                     <th>IP地址</th>
                                     <th>端口</th>
@@ -580,8 +170,7 @@
                             <h2 id="currentSnapshotGroupName">快照管理</h2>
                             <div class="action-bar">
                                 <input type="text" class="search-box" id="snapshotSearch" placeholder="按名称搜索..." oninput="window.snapshots.searchSnapshots()">
-                                <button class="btn btn-primary" onclick="window.snapshots.openSnapshotModal()">+ 创建快照</button>
-                                <button class="btn btn-success" onclick="window.snapshots.openSnapshotBuildModal()">构建快照</button>
+                                <button class="btn btn-success" onclick="window.snapshots.openSnapshotBuildModal()">+ 构建快照</button>
                                 <button class="btn btn-default" onclick="window.snapshots.loadSnapshots()">刷新</button>
                             </div>
                         </div>
@@ -593,6 +182,7 @@
                                     <th>快照组</th>
                                     <th>创建时间</th>
                                     <th>默认</th>
+                                    <th>状态</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
@@ -712,7 +302,7 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>用户名</label>
-                        <input type="text" id="commUsername" value="root">
+                        <input type="text" id="commUsername" value="root" autocomplete="username">
                     </div>
                     <div class="form-group">
                         <label>所属分组</label>
@@ -723,12 +313,13 @@
                     <label>认证方式</label>
                     <select id="commAuthType" onchange="toggleAuthFields()">
                         <option value="password">密码认证</option>
-                        <option value="key">SSH 密钥</option>
+                        <option value="private_key">SSH 密钥</option>
                     </select>
                 </div>
                 <div class="form-group" id="passwordField">
                     <label>密码</label>
-                    <input type="password" id="commPassword">
+                    <input type="text" id="commUsernameForPassword" style="display:none" tabindex="-1" autocomplete="username">
+                    <input type="password" id="commPassword" autocomplete="current-password">
                 </div>
                 <div class="form-group" id="keyField" style="display:none">
                     <label>SSH 密钥</label>
@@ -736,7 +327,8 @@
                 </div>
                 <div class="form-group" id="deployKeyField" style="display:none">
                     <label>部署公钥密码 *（使用密钥认证时需先用密码部署公钥）</label>
-                    <input type="password" id="commDeployPassword" placeholder="目标机器的SSH密码">
+                    <input type="text" id="commDeployUsername" style="display:none" tabindex="-1" autocomplete="username">
+                    <input type="password" id="commDeployPassword" autocomplete="current-password" placeholder="目标机器的SSH密码">
                 </div>
                 <div class="form-group">
                     <label>描述</label>
@@ -790,7 +382,8 @@
                 </div>
                 <div class="form-group">
                     <label> passphrase（可选）</label>
-                    <input type="password" id="sshKeyPassphrase">
+                    <input type="text" id="sshKeyUsername" style="display:none" tabindex="-1" autocomplete="username">
+                    <input type="password" id="sshKeyPassphrase" autocomplete="current-password">
                 </div>
                 <div class="form-group">
                     <label>描述</label>
@@ -805,19 +398,31 @@
     <div class="modal" id="groupModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3>创建分组</h3>
+                <h3 id="groupModalTitle">创建分组</h3>
                 <button class="modal-close" onclick="closeModal('groupModal')">&times;</button>
             </div>
             <form id="groupForm">
+                <input type="hidden" id="groupId">
                 <div class="form-group">
                     <label>分组名称 *</label>
                     <input type="text" id="groupName" required>
                 </div>
                 <div class="form-group">
+                    <label>上级分组</label>
+                    <select id="groupParentId">
+                        <option value="">无（顶级分组）</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>排序权重</label>
+                    <input type="number" id="groupSortOrder" value="0" min="0">
+                    <small style="color: #666;">数字越小排序越靠前</small>
+                </div>
+                <div class="form-group">
                     <label>描述</label>
                     <input type="text" id="groupDesc">
                 </div>
-                <button type="submit" class="btn btn-primary" style="width:100%">创建</button>
+                <button type="submit" class="btn btn-primary" style="width:100%">保存</button>
             </form>
         </div>
     </div>
@@ -848,7 +453,8 @@
                 </div>
                 <div class="form-group" id="deployPasswordGroup" style="display: none;">
                     <label>部署密码 *</label>
-                    <input type="password" id="deployPassword" name="deployPassword" placeholder="通信机密码">
+                    <input type="text" id="deployUsername" style="display:none" tabindex="-1" autocomplete="username">
+                    <input type="password" id="deployPassword" name="deployPassword" placeholder="通信机密码" autocomplete="current-password">
                 </div>
                 <button type="submit" class="btn btn-primary" style="width:100%">导入</button>
             </form>
@@ -869,7 +475,8 @@
                 </div>
                 <div class="form-group">
                     <label>部署密码 *</label>
-                    <input type="password" id="batchDeployPassword" placeholder="通信机密码" required>
+                    <input type="text" id="batchDeployUsername" style="display:none" tabindex="-1" autocomplete="username">
+                    <input type="password" id="batchDeployPassword" placeholder="通信机密码" autocomplete="current-password" required>
                 </div>
                 <div class="form-group">
                     <label>选择通信机 *</label>
@@ -926,6 +533,13 @@
                 <div class="form-group">
                     <label>检查项名称 *</label>
                     <input type="text" id="checkItemName" required placeholder="如：检查/etc/hosts文件">
+                </div>
+
+                <div class="form-group">
+                    <label>所属列表</label>
+                    <select id="checkItemListSelect">
+                        <option value="">不指定</option>
+                    </select>
                 </div>
 
                 <!-- ==================== 文件/目录检查 ==================== -->
@@ -1161,6 +775,40 @@
         </div>
     </div>
     
+    <!-- 快照分组弹窗 -->
+    <div class="modal" id="snapshotGroupModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="snapshotGroupModalTitle">添加快照组</h3>
+                <button class="modal-close" onclick="window.shared.closeModal('snapshotGroupModal')">&times;</button>
+            </div>
+            <form id="snapshotGroupForm">
+                <div class="form-group">
+                    <label>快照组名称 *</label>
+                    <input type="text" id="snapshotGroupName" required>
+                </div>
+                <div class="form-group">
+                    <label>上级分组</label>
+                    <select id="snapshotGroupParent">
+                        <option value="">无（顶级分组）</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>关联检查项列表</label>
+                    <select id="snapshotGroupCheckItemList">
+                        <option value="">无</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>描述</label>
+                    <input type="text" id="snapshotGroupDesc">
+                </div>
+                <input type="hidden" id="snapshotGroupId">
+                <button type="submit" class="btn btn-primary" style="width:100%">保存</button>
+            </form>
+        </div>
+    </div>
+
     <!-- 快照弹窗 -->
     <div class="modal" id="snapshotModal">
         <div class="modal-content">
@@ -1192,7 +840,7 @@
 
     <!-- 快照构建对话框 -->
     <div class="modal" id="snapshotBuildModal">
-        <div class="modal-content" style="max-width: 700px; max-height: 90vh; overflow-y: auto;">
+        <div class="modal-content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
             <div class="modal-header">
                 <h3>快照构建</h3>
                 <button class="modal-close" onclick="window.snapshots.closeSnapshotBuildModal()">&times;</button>
@@ -1208,36 +856,15 @@
                 </div>
                 <div class="form-group">
                     <label>选择通信机组</label>
-                    <div id="commGroupTree" style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; border-radius: 6px;"></div>
+                    <p style="color: #666; font-size: 0.9em; margin: 5px 0;">点击组名展开/收起，勾选通信机后选择对应的检查项列表</p>
+                    <div id="commGroupTree" style="max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 12px; border-radius: 6px; background: #fafafa;"></div>
                 </div>
-                <div id="buildSelectionCount" style="margin: 10px 0; color: #666;">已选: 0台, 0组</div>
+                <div id="buildSelectionCount" style="margin: 10px 0; padding: 10px; background: #e6f7ff; border-left: 3px solid #1890ff; color: #333; font-weight: 500;">已选: 0台, 0组</div>
                 <div style="display:flex; gap:10px; margin-top:20px;">
                     <button type="button" class="btn btn-primary" style="flex:1;" onclick="window.snapshots.startSnapshotBuild()">开始构建</button>
                     <button type="button" class="btn btn-default" style="flex:1;" onclick="window.snapshots.closeSnapshotBuildModal()">取消</button>
                 </div>
             </form>
-        </div>
-    </div>
-
-    <!-- 构建进度对话框 -->
-    <div class="modal" id="snapshotBuildProgressModal">
-        <div class="modal-content" style="max-width: 600px;">
-            <div class="modal-header">
-                <h3>快照构建进度: <span id="buildProgressName"></span></h3>
-                <button class="modal-close" onclick="closeBuildProgressModal()">&times;</button>
-            </div>
-            <div>
-                <div style="margin-bottom:15px;">
-                    <div>总体进度: <span id="buildProgressText"></span></div>
-                    <div style="height:20px; background:#eee; border-radius:10px; overflow:hidden;">
-                        <div id="buildOverallProgress" style="height:100%; background:#52c41a; width:0%; transition:width 0.3s;"></div>
-                    </div>
-                </div>
-                <div id="buildGroupsProgress"></div>
-                <div style="margin-top:20px; text-align:right;">
-                    <button class="btn btn-danger" id="cancelBuildBtn">取消构建</button>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -1275,10 +902,69 @@
         </div>
     </div>
 
-    <script src="/static/js/shared.js"></script>
-    <script src="/static/js/communications.js"></script>
-    <script src="/static/js/dashboard.js"></script>
-    <script src="/static/js/checks.js"></script>
-    <script src="/static/js/reports.js"></script>
+    <!-- 快照详情对话框 -->
+    <div class="modal" id="snapshotDetailModal">
+        <div class="modal-content" style="max-width: 900px; max-height: 85vh; overflow-y: auto;">
+            <div class="modal-header">
+                <h3>快照详情</h3>
+                <button class="close-btn" onclick="closeSnapshotDetailModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="snapshotDetailContent">
+                <div class="detail-header">
+                    <h4 id="detailSnapshotName">-</h4>
+                    <p id="detailSnapshotMeta" class="text-muted"></p>
+                </div>
+                <div id="snapshotInstancesList" class="detail-section">
+                    <!-- 动态加载 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-default" onclick="closeSnapshotDetailModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/shared.js?v=8"></script>
+    <script src="/static/js/dom-utils.js?v=8"></script>
+    <script src="/static/js/auth.js?v=8"></script>
+    <script>
+        // 确保shared模块加载完成后再加载其他模块
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔧 开始加载模块...');
+
+            // 动态加载其他模块（添加版本号防止缓存）
+            const modules = [
+                '/static/js/communications.js?v=14',
+                '/static/js/checkitems.js?v=14',
+                '/static/js/snapshots.js?v=19',
+                '/static/js/reports.js',
+                '/static/js/checks.js',
+                '/static/js/ssh-keys.js?v=1',
+                '/static/js/components/data-visualizer.js?v=1',
+                '/static/js/components/snapshot-detail.js?v=1',
+                '/static/js/dashboard.js?v=15'
+            ];
+
+            let loadedCount = 0;
+
+            modules.forEach(src => {
+                const script = document.createElement('script');
+                script.src = src;
+                script.onload = function() {
+                    loadedCount++;
+                    console.log(`✅ 已加载: ${src}`);
+                    if (loadedCount === modules.length) {
+                        console.log('🎉 所有模块加载完成');
+                        // 触发初始化完成事件
+                        document.dispatchEvent(new Event('modulesLoaded'));
+                    }
+                };
+                script.onerror = function() {
+                    console.error(`❌ 加载失败: ${src}`);
+                };
+                document.head.appendChild(script);
+            });
+        });
+    </script>
 </body>
 </html>
