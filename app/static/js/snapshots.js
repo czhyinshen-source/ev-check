@@ -615,8 +615,122 @@ async function cancelSnapshotBuild(taskId) {
     } catch (e) { console.error(e); }
 }
 
+// 按检查项聚合展示数据
+async function renderAggregatedCheckItems(instances, instanceDataMap, itemMap, commMap) {
+    // 收集所有检查项并按ID分组
+    const checkItemGroups = {};
+
+    for (const inst of instances) {
+        const instanceData = instanceDataMap[inst.id];
+        if (!instanceData || !instanceData.environment_data) continue;
+
+        for (const ed of instanceData.environment_data) {
+            const item = itemMap[ed.check_item_id];
+            if (!item) continue;
+
+            if (!checkItemGroups[ed.check_item_id]) {
+                checkItemGroups[ed.check_item_id] = {
+                    item: item,
+                    results: []
+                };
+            }
+
+            checkItemGroups[ed.check_item_id].results.push({
+                instanceId: inst.id,
+                communicationId: inst.communication_id,
+                communicationName: commMap[inst.communication_id]?.name || `通信机${inst.communication_id}`,
+                data: ed.data_value || {},
+                hasError: !!(ed.data_value?._error || ed.data_value?._status === 'error' || ed.data_value?._status === 'connection_failed')
+            });
+        }
+    }
+
+    // 按通信机数量排序，优先显示所有通信机都有的检查项
+    const sortedGroups = Object.values(checkItemGroups).sort((a, b) => {
+        return b.results.length - a.results.length;
+    });
+
+    let html = '<div class="aggregated-check-items">';
+    html += '<table class="check-items-table">';
+    html += '<thead><tr>';
+    html += '<th class="check-item-name-header">检查项</th>';
+
+    // 收集所有通信机并排序
+    const allComms = new Map();
+    instances.forEach(inst => {
+        const comm = commMap[inst.communication_id];
+        allComms.set(inst.communication_id, {
+            id: inst.communication_id,
+            name: comm?.name || `通信机${inst.communication_id}`,
+            ip: comm?.ip_address || '-'
+        });
+    });
+
+    const sortedComms = Array.from(allComms.values()).sort((a, b) => a.name.localeCompare(b.name));
+
+    // 为每个通信机添加列
+    sortedComms.forEach(comm => {
+        html += `<th class="communication-header" title="${comm.ip}">${comm.name}</th>`;
+    });
+
+    html += '</tr></thead>';
+    html += '<tbody>';
+
+    // 为每个检查项添加一行
+    for (const group of sortedGroups) {
+        const item = group.item;
+        html += '<tr class="check-item-row">';
+
+        // 检查项名称列
+        html += '<td class="check-item-name-cell">';
+        if (window.fileFormatter && window.fileFormatter.isFileCheckItem(item.type)) {
+            // 文件检查项显示图标和类型
+            html += `<span class="check-type-icon">${window.fileFormatter.getCheckTypeLabel(item.type)}</span>`;
+        } else {
+            html += `<span class="check-item-name">${item.name || `检查项#${item.id}`}</span>`;
+        }
+        html += '</td>';
+
+        // 为每个通信机添加结果列
+        sortedComms.forEach(comm => {
+            const result = group.results.find(r => r.communicationId === comm.id);
+
+            html += '<td class="result-cell">';
+            if (result) {
+                if (result.hasError) {
+                    const errorMsg = result.data._error || '采集失败';
+                    html += `<span class="result-error" title="${errorMsg}">❌</span>`;
+                } else if (window.fileFormatter && window.fileFormatter.isFileCheckItem(item.type)) {
+                    // 文件检查项显示格式化结果
+                    const detailedResults = window.fileFormatter.formatFileCheckDataDetailed(item, result.data);
+                    html += '<div class="file-results-inline">';
+                    detailedResults.forEach((resultText, index) => {
+                        if (index === 0) {
+                            html += `<span class="file-result-text">${resultText}</span>`;
+                        }
+                    });
+                    html += '</div>';
+                } else {
+                    // 非文件检查项显示状态指示
+                    html += '<span class="result-indicator">📊</span>';
+                }
+            } else {
+                // 该通信机没有此项检查
+                html += '<span class="no-result">-</span>';
+            }
+            html += '</td>';
+        });
+
+        html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    html += '</div>';
+
+    return html;
+}
+
 // 查看快照详情
-async function viewSnapshotDetail(snapshotId) {
     try {
         document.getElementById('snapshotDetailModal').classList.add('active');
         document.getElementById('snapshotInstancesList').innerHTML = '<div class="loading">加载中...</div>';
@@ -685,88 +799,9 @@ async function viewSnapshotDetail(snapshotId) {
             }
         });
 
-        // 渲染实例列表和数据
-        let html = '<div class="instances-grid">';
-        for (const inst of instances) {
-            const comm = commMap[inst.communication_id] || {};
-            const list = listMap[inst.check_item_list_id] || {};
-            const instanceData = instanceDataMap[inst.id];
-
-            html += `
-                <div class="instance-card">
-                    <div class="instance-header">
-                        <span class="comm-name">${comm.name || '未知通信机'}</span>
-                        <span class="comm-ip">${comm.ip_address || '-'}:${comm.port || 22}</span>
-                    </div>
-                    <div class="instance-meta">
-                        检查列表: ${list.name || '默认'}
-                    </div>
-            `;
-
-            // 如果有数据，直接显示格式化后的数据
-            if (instanceData && instanceData.environment_data && instanceData.environment_data.length > 0) {
-                const envData = instanceData.environment_data;
-                html += '<div class="instance-data-preview">';
-
-                // 只显示前3个检查项，避免内容过长
-                const displayData = envData.slice(0, 3);
-                for (const ed of displayData) {
-                    const item = itemMap[ed.check_item_id] || {};
-                    const value = ed.data_value || {};
-
-                    // 检查是否为文件检查项
-                    if (window.fileFormatter && window.fileFormatter.isFileCheckItem(item.type)) {
-                        const formatted = window.fileFormatter.formatFileCheckData(item, value);
-                        html += `
-                            <div class="file-check-preview">
-                                <div class="file-path-line-preview">
-                                    <span class="file-icon">📁</span>
-                                    <span class="file-path">${formatted.filePath}</span>
-                                </div>
-                                <div class="check-type-line-preview">
-                                    <span class="check-type-label">${formatted.checkType}</span>
-                                </div>
-                                <div class="check-results-preview">
-                                    ${formatted.results.map(result =>
-                                        `<div class="check-result-item">${result}</div>`
-                                    ).join('')}
-                                </div>
-                            </div>
-                        `;
-                    } else {
-                        // 非文件检查项显示基本信息
-                        html += `
-                            <div class="check-item-preview">
-                                <div class="check-item-name">${item.name || `检查项#${ed.check_item_id}`}</div>
-                                <div class="check-item-type">${item.type || '-'}</div>
-                            </div>
-                        `;
-                    }
-                }
-
-                if (envData.length > 3) {
-                    html += '<div class="more-items-hint">还有 ' + (envData.length - 3) + ' 个检查项...</div>';
-                }
-
-                html += '</div>';
-                html += `
-                    <div class="instance-data" id="instance-data-${inst.id}">
-                        <button class="btn btn-xs" onclick="loadInstanceData(${inst.id})">查看详细数据</button>
-                    </div>
-                `;
-            } else {
-                // 没有数据时显示原来的按钮
-                html += `
-                    <div class="instance-data" id="instance-data-${inst.id}">
-                        <button class="btn btn-xs" onclick="loadInstanceData(${inst.id})">加载采集数据</button>
-                    </div>
-                `;
-            }
-
-            html += '</div>';
-        }
-        html += '</div>';
-        document.getElementById('snapshotInstancesList').innerHTML = html;
+        // 渲染聚合的检查项表格
+        const aggregatedHtml = await renderAggregatedCheckItems(instances, instanceDataMap, itemMap, commMap);
+        document.getElementById('snapshotInstancesList').innerHTML = aggregatedHtml;
 
     } catch (e) {
         console.error(e);
@@ -826,38 +861,21 @@ async function loadInstanceData(instanceId) {
                         </div>
                     `;
                     html += `
-                        <div class="env-data-item file-check-item has-error">
-                            <div class="file-path-line">
-                                <span class="file-icon">📁</span>
-                                <span class="file-path">${item.target_path || '-'}</span>
-                            </div>
-                            <div class="check-type-line">
-                                <span class="check-type-label">${window.fileFormatter.getCheckTypeLabel(item.type)}</span>
-                            </div>
-                            <div class="check-results">
+                        <div class="env-data-item file-check-item-detailed has-error">
+                            <div class="check-results-detailed">
                                 ${errorHtml}
                             </div>
                         </div>
                     `;
                 } else {
-                    // 格式化文件检查项
-                    const formatted = window.fileFormatter.formatFileCheckData(item, value);
+                    // 详细数据只显示结果，不显示文件路径和检查项类型
+                    const detailedResults = window.fileFormatter.formatFileCheckDataDetailed(item, value);
 
                     html += `
-                        <div class="env-data-item file-check-item">
-                            <!-- 第一行：文件路径 -->
-                            <div class="file-path-line">
-                                <span class="file-icon">📁</span>
-                                <span class="file-path">${formatted.filePath}</span>
-                            </div>
-                            <!-- 第二行：检查项类型 -->
-                            <div class="check-type-line">
-                                <span class="check-type-label">${formatted.checkType}</span>
-                            </div>
-                            <!-- 第三行：采集结果 -->
-                            <div class="check-results">
-                                ${formatted.results.map(result =>
-                                    `<div class="check-result-item">${result}</div>`
+                        <div class="env-data-item file-check-item-detailed">
+                            <div class="check-results-detailed">
+                                ${detailedResults.map(result =>
+                                    `<div class="check-result-item-detailed">${result}</div>`
                                 ).join('')}
                             </div>
                         </div>

@@ -86,5 +86,37 @@ window.fileFormatter = {
             'file_md5': '🔐 文件MD5检查'
         };
         return labels[type] || type;
+    },
+
+    // 格式化文件检查项详细数据（仅结果，不显示路径和类型）
+    formatFileCheckDataDetailed: function(checkItem, data) {
+        const results = [];
+
+        // 根据不同检查类型只返回结果值
+        switch(checkItem.type) {
+            case 'file_exists':
+                results.push(data.exists ? '文件存在 ✓' : '文件不存在');
+                break;
+            case 'file_permissions':
+                results.push(this.formatPermissions(data.permissions));
+                break;
+            case 'file_owner':
+                results.push(data.owner || '-');
+                break;
+            case 'file_group':
+                results.push(data.group || '-');
+                break;
+            case 'file_size':
+                results.push(this.formatFileSize(data.size));
+                break;
+            case 'file_mtime':
+                results.push(this.formatTimestamp(data.mtime));
+                break;
+            case 'file_md5':
+                results.push(data.md5 || '-');
+                break;
+        }
+
+        return results;
     }
 };

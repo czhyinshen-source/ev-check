@@ -636,6 +636,134 @@ tr:hover td { background: #fafafa; }
     border-bottom: 1px solid #f1f3f4;
 }
 
+/* 详细数据中的文件检查项样式 */
+.env-data-item.file-check-item-detailed {
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-bottom: 0;
+}
+
+.env-data-item.file-check-item-detailed.has-error {
+    background: #fff2f0;
+    border-left: 3px solid #f5222d;
+    padding: 8px;
+    margin-bottom: 4px;
+}
+
+.check-results-detailed {
+    background: transparent;
+    border: none;
+    padding: 0;
+}
+
+.check-result-item-detailed {
+    font-size: 14px;
+    line-height: 1.5;
+    color: #212529;
+    font-family: 'Courier New', monospace;
+}
+
+.check-result-item-detailed:not(:last-child) {
+    margin-bottom: 2px;
+    padding-bottom: 2px;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+/* 聚合检查项表格样式 */
+.aggregated-check-items {
+    margin-top: 16px;
+}
+
+.check-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.check-items-table thead {
+    background: #fafafa;
+}
+
+.check-items-table th {
+    padding: 12px;
+    text-align: left;
+    font-weight: 500;
+    color: #333;
+    border-bottom: 2px solid #e8e8e8;
+}
+
+.check-items-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    vertical-align: middle;
+}
+
+.check-items-table tbody tr:hover {
+    background: #f5f5f5;
+}
+
+.check-item-name-header {
+    width: 200px;
+    min-width: 150px;
+}
+
+.communication-header {
+    text-align: center;
+    min-width: 120px;
+}
+
+.check-item-name-cell {
+    font-weight: 500;
+    color: #333;
+}
+
+.check-type-icon {
+    display: inline-block;
+    font-size: 13px;
+}
+
+.check-item-name {
+    display: inline-block;
+    font-size: 14px;
+}
+
+.result-cell {
+    text-align: center;
+    position: relative;
+}
+
+.result-error {
+    color: #f5222d;
+    cursor: help;
+    font-size: 16px;
+}
+
+.no-result {
+    color: #ccc;
+}
+
+.result-indicator {
+    color: #666;
+    font-size: 14px;
+}
+
+.file-results-inline {
+    display: inline-block;
+}
+
+.file-result-text {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #333;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
 /* 实例数据预览样式 */
 .instance-data-preview {
     margin-top: 12px;
