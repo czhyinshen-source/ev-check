@@ -569,3 +569,141 @@ tr:hover td { background: #fafafa; }
     white-space: pre-wrap;
     word-break: break-all;
 }
+
+/* 文件检查项样式 */
+.env-data-item.file-check-item {
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+/* 文件路径行 */
+.file-path-line {
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    font-weight: 500;
+    color: #495057;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.file-icon {
+    font-size: 16px;
+    margin-right: 8px;
+}
+
+.file-path {
+    font-family: 'Courier New', monospace;
+    background: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+/* 检查类型行 */
+.check-type-line {
+    font-size: 13px;
+    color: #6c757d;
+    margin-bottom: 12px;
+}
+
+.check-type-label {
+    font-weight: 500;
+}
+
+/* 检查结果 */
+.check-results {
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 12px;
+}
+
+.check-result-item {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #212529;
+    font-family: 'Courier New', monospace;
+}
+
+.check-result-item:not(:last-child) {
+    margin-bottom: 4px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #f1f3f4;
+}
+
+/* 实例数据预览样式 */
+.instance-data-preview {
+    margin-top: 12px;
+    padding: 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+}
+
+.file-check-preview {
+    margin-bottom: 12px;
+    padding: 10px;
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-radius: 6px;
+}
+
+.file-path-line-preview {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: #495057;
+    margin-bottom: 6px;
+}
+
+.check-type-line-preview {
+    font-size: 12px;
+    color: #6c757d;
+    margin-bottom: 8px;
+}
+
+.check-results-preview {
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    padding: 8px;
+}
+
+.check-result-item {
+    font-size: 12px;
+    line-height: 1.5;
+    color: #212529;
+    font-family: 'Courier New', monospace;
+}
+
+.check-item-preview {
+    margin-bottom: 8px;
+    padding: 8px;
+    background: white;
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+}
+
+.check-item-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 4px;
+}
+
+.check-item-type {
+    font-size: 12px;
+    color: #666;
+}
+
+.more-items-hint {
+    font-size: 12px;
+    color: #999;
+    text-align: center;
+    margin-top: 8px;
+}

@@ -615,14 +615,8 @@ async function cancelSnapshotBuild(taskId) {
     } catch (e) { console.error(e); }
 }
 
-// 查看快照详情（使用新的弹窗组件）
+// 查看快照详情
 async function viewSnapshotDetail(snapshotId) {
-    // 使用新的快照详情弹窗组件
-    window.snapshotDetailModal.show(snapshotId);
-}
-
-// 原有的viewSnapshotDetail函数重命名为viewSnapshotDetailLegacy，保留兼容性
-async function viewSnapshotDetailLegacy(snapshotId) {
     try {
         document.getElementById('snapshotDetailModal').classList.add('active');
         document.getElementById('snapshotInstancesList').innerHTML = '<div class="loading">加载中...</div>';
@@ -668,11 +662,35 @@ async function viewSnapshotDetailLegacy(snapshotId) {
         const itemMap = {};
         items.forEach(i => { itemMap[i.id] = i; });
 
-        // 渲染实例列表
+        // 并行加载所有实例的环境数据
+        const instanceDataPromises = instances.map(async (inst) => {
+            try {
+                const res = await fetch(`${window.shared.API_BASE}/api/v1/snapshots/instances/${inst.id}`, {
+                    headers: window.shared.getHeaders(),
+                });
+                if (!res.ok) return null;
+                const data = await res.json();
+                return { instanceId: inst.id, data };
+            } catch (e) {
+                console.error(`加载实例 ${inst.id} 数据失败:`, e);
+                return null;
+            }
+        });
+
+        const instanceDataResults = await Promise.all(instanceDataPromises);
+        const instanceDataMap = {};
+        instanceDataResults.forEach(result => {
+            if (result) {
+                instanceDataMap[result.instanceId] = result.data;
+            }
+        });
+
+        // 渲染实例列表和数据
         let html = '<div class="instances-grid">';
         for (const inst of instances) {
             const comm = commMap[inst.communication_id] || {};
             const list = listMap[inst.check_item_list_id] || {};
+            const instanceData = instanceDataMap[inst.id];
 
             html += `
                 <div class="instance-card">
@@ -683,11 +701,69 @@ async function viewSnapshotDetailLegacy(snapshotId) {
                     <div class="instance-meta">
                         检查列表: ${list.name || '默认'}
                     </div>
+            `;
+
+            // 如果有数据，直接显示格式化后的数据
+            if (instanceData && instanceData.environment_data && instanceData.environment_data.length > 0) {
+                const envData = instanceData.environment_data;
+                html += '<div class="instance-data-preview">';
+
+                // 只显示前3个检查项，避免内容过长
+                const displayData = envData.slice(0, 3);
+                for (const ed of displayData) {
+                    const item = itemMap[ed.check_item_id] || {};
+                    const value = ed.data_value || {};
+
+                    // 检查是否为文件检查项
+                    if (window.fileFormatter && window.fileFormatter.isFileCheckItem(item.type)) {
+                        const formatted = window.fileFormatter.formatFileCheckData(item, value);
+                        html += `
+                            <div class="file-check-preview">
+                                <div class="file-path-line-preview">
+                                    <span class="file-icon">📁</span>
+                                    <span class="file-path">${formatted.filePath}</span>
+                                </div>
+                                <div class="check-type-line-preview">
+                                    <span class="check-type-label">${formatted.checkType}</span>
+                                </div>
+                                <div class="check-results-preview">
+                                    ${formatted.results.map(result =>
+                                        `<div class="check-result-item">${result}</div>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        // 非文件检查项显示基本信息
+                        html += `
+                            <div class="check-item-preview">
+                                <div class="check-item-name">${item.name || `检查项#${ed.check_item_id}`}</div>
+                                <div class="check-item-type">${item.type || '-'}</div>
+                            </div>
+                        `;
+                    }
+                }
+
+                if (envData.length > 3) {
+                    html += '<div class="more-items-hint">还有 ' + (envData.length - 3) + ' 个检查项...</div>';
+                }
+
+                html += '</div>';
+                html += `
+                    <div class="instance-data" id="instance-data-${inst.id}">
+                        <button class="btn btn-xs" onclick="loadInstanceData(${inst.id})">查看详细数据</button>
+                    </div>
+                `;
+            } else {
+                // 没有数据时显示原来的按钮
+                html += `
                     <div class="instance-data" id="instance-data-${inst.id}">
                         <button class="btn btn-xs" onclick="loadInstanceData(${inst.id})">加载采集数据</button>
                     </div>
-                </div>
-            `;
+                `;
+            }
+
+            html += '</div>';
         }
         html += '</div>';
         document.getElementById('snapshotInstancesList').innerHTML = html;
@@ -730,45 +806,105 @@ async function loadInstanceData(instanceId) {
             const item = itemMap[ed.check_item_id] || {};
             const value = ed.data_value || {};
 
-            // 检查是否有错误
-            const hasError = value._error || value._status === 'error' || value._status === 'connection_failed';
+            // 检查是否为文件检查项
+            if (window.fileFormatter && window.fileFormatter.isFileCheckItem(item.type)) {
+                // 检查是否有错误
+                const hasError = value._error || value._status === 'error' || value._status === 'connection_failed';
 
-            let valueStr;
-            let errorHtml = '';
-
-            if (hasError) {
-                const errorMsg = value._error || '未知错误';
-                const errorType = value._error_type || '';
-                valueStr = JSON.stringify(value, null, 2);
-                errorHtml = `
-                    <div class="env-data-error">
-                        <div class="error-icon">⚠️</div>
-                        <div class="error-message">
-                            <strong>采集失败</strong>
-                            ${errorType ? `<span class="error-type">${errorType}</span>` : ''}
-                            <div class="error-detail">${errorMsg}</div>
+                if (hasError) {
+                    // 文件检查项错误处理 - 使用原有错误显示格式
+                    const errorMsg = value._error || '未知错误';
+                    const errorType = value._error_type || '';
+                    const errorHtml = `
+                        <div class="env-data-error">
+                            <div class="error-icon">⚠️</div>
+                            <div class="error-message">
+                                <strong>采集失败</strong>
+                                ${errorType ? `<span class="error-type">${errorType}</span>` : ''}
+                                <div class="error-detail">${errorMsg}</div>
+                            </div>
                         </div>
+                    `;
+                    html += `
+                        <div class="env-data-item file-check-item has-error">
+                            <div class="file-path-line">
+                                <span class="file-icon">📁</span>
+                                <span class="file-path">${item.target_path || '-'}</span>
+                            </div>
+                            <div class="check-type-line">
+                                <span class="check-type-label">${window.fileFormatter.getCheckTypeLabel(item.type)}</span>
+                            </div>
+                            <div class="check-results">
+                                ${errorHtml}
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // 格式化文件检查项
+                    const formatted = window.fileFormatter.formatFileCheckData(item, value);
+
+                    html += `
+                        <div class="env-data-item file-check-item">
+                            <!-- 第一行：文件路径 -->
+                            <div class="file-path-line">
+                                <span class="file-icon">📁</span>
+                                <span class="file-path">${formatted.filePath}</span>
+                            </div>
+                            <!-- 第二行：检查项类型 -->
+                            <div class="check-type-line">
+                                <span class="check-type-label">${formatted.checkType}</span>
+                            </div>
+                            <!-- 第三行：采集结果 -->
+                            <div class="check-results">
+                                ${formatted.results.map(result =>
+                                    `<div class="check-result-item">${result}</div>`
+                                ).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            } else {
+                // 原有非文件检查项的逻辑
+                // 检查是否有错误
+                const hasError = value._error || value._status === 'error' || value._status === 'connection_failed';
+
+                let valueStr;
+                let errorHtml = '';
+
+                if (hasError) {
+                    const errorMsg = value._error || '未知错误';
+                    const errorType = value._error_type || '';
+                    valueStr = JSON.stringify(value, null, 2);
+                    errorHtml = `
+                        <div class="env-data-error">
+                            <div class="error-icon">⚠️</div>
+                            <div class="error-message">
+                                <strong>采集失败</strong>
+                                ${errorType ? `<span class="error-type">${errorType}</span>` : ''}
+                                <div class="error-detail">${errorMsg}</div>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    // 移除内部字段
+                    const displayValue = {...value};
+                    delete displayValue._error;
+                    delete displayValue._status;
+                    delete displayValue._error_type;
+                    valueStr = Object.keys(displayValue).length > 0 ? JSON.stringify(displayValue, null, 2) : '{}';
+                }
+
+                html += `
+                    <div class="env-data-item ${hasError ? 'has-error' : ''}">
+                        <div class="env-data-title">
+                            <strong>${item.name || `检查项#${ed.check_item_id}`}</strong>
+                            <span class="env-data-type">${item.type || '-'}</span>
+                        </div>
+                        ${errorHtml}
+                        ${!hasError ? `<pre class="env-data-value">${valueStr}</pre>` : ''}
                     </div>
                 `;
-            } else {
-                // 移除内部字段
-                const displayValue = {...value};
-                delete displayValue._error;
-                delete displayValue._status;
-                delete displayValue._error_type;
-                valueStr = Object.keys(displayValue).length > 0 ? JSON.stringify(displayValue, null, 2) : '{}';
             }
-
-            html += `
-                <div class="env-data-item ${hasError ? 'has-error' : ''}">
-                    <div class="env-data-title">
-                        <strong>${item.name || `检查项#${ed.check_item_id}`}</strong>
-                        <span class="env-data-type">${item.type || '-'}</span>
-                    </div>
-                    ${errorHtml}
-                    ${!hasError ? `<pre class="env-data-value">${valueStr}</pre>` : ''}
-                </div>
-            `;
         }
         html += '</div>';
         container.innerHTML = html;
@@ -799,7 +935,6 @@ window.snapshots = {
     startSnapshotBuild,
     cancelSnapshotBuild,
     viewSnapshotDetail,
-    viewSnapshotDetailLegacy,
     loadInstanceData,
     closeSnapshotDetailModal,
     startBuildPolling,
