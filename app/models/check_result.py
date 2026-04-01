@@ -8,32 +8,54 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+class CheckRuleSnapshot(Base):
+    """规则 快照/快照组关联"""
+    __tablename__ = "check_rule_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("check_rules.id", ondelete="CASCADE"), nullable=False)
+    snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=True)
+    snapshot_group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshot_groups.id", ondelete="CASCADE"), nullable=True)
+
+class CheckRuleCheckItem(Base):
+    """规则 检查项/检查项列表关联"""
+    __tablename__ = "check_rule_check_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("check_rules.id", ondelete="CASCADE"), nullable=False)
+    check_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("check_items.id", ondelete="CASCADE"), nullable=True)
+    check_item_list_id: Mapped[Optional[int]] = mapped_column(ForeignKey("check_item_lists.id", ondelete="CASCADE"), nullable=True)
+
+class CheckRuleCommunication(Base):
+    """规则 通信机/通信机组关联"""
+    __tablename__ = "check_rule_communications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("check_rules.id", ondelete="CASCADE"), nullable=False)
+    communication_id: Mapped[Optional[int]] = mapped_column(ForeignKey("communications.id", ondelete="CASCADE"), nullable=True)
+    communication_group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("communication_groups.id", ondelete="CASCADE"), nullable=True)
+
+
 class CheckRule(Base):
     """检查规则"""
     __tablename__ = "check_rules"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
-    check_item_list_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("check_item_lists.id", ondelete="SET NULL"),
-        nullable=True
-    )
-    snapshot_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("snapshots.id", ondelete="SET NULL"),
-        nullable=True
-    )
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    allow_manual_execution: Mapped[bool] = mapped_column(default=True)
+    cron_expression: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    time_window_start: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+    time_window_end: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+    time_window_weekdays: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
-    check_item_list: Mapped[Optional["CheckItemList"]] = relationship(
-        "CheckItemList",
-        back_populates="check_rules"
-    )
-    snapshot: Mapped[Optional["Snapshot"]] = relationship(
-        "Snapshot",
-        back_populates="check_rules"
-    )
+    snapshot_links: Mapped[list["CheckRuleSnapshot"]] = relationship("CheckRuleSnapshot", cascade="all, delete-orphan")
+    check_item_links: Mapped[list["CheckRuleCheckItem"]] = relationship("CheckRuleCheckItem", cascade="all, delete-orphan")
+    communication_links: Mapped[list["CheckRuleCommunication"]] = relationship("CheckRuleCommunication", cascade="all, delete-orphan")
+
     check_results: Mapped[list["CheckResult"]] = relationship(
         "CheckResult",
         back_populates="rule",
@@ -131,6 +153,4 @@ from app.models.communication import Communication
 from app.models.check_item import CheckItemList
 from app.models.snapshot import Snapshot
 
-CheckRule.check_item_list = relationship("CheckItemList", back_populates="check_rules")
-CheckRule.snapshot = relationship("Snapshot", back_populates="check_rules")
 CheckResult.communication = relationship("Communication", back_populates="check_results")

@@ -77,11 +77,6 @@ class Snapshot(Base):
         back_populates="snapshot",
         cascade="all, delete-orphan"
     )
-    check_rules: Mapped[list["CheckRule"]] = relationship(
-        "CheckRule",
-        back_populates="snapshot",
-        cascade="all, delete-orphan"
-    )
 
 
 class SnapshotInstance(Base):

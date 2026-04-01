@@ -67,8 +67,3 @@ class CheckItemList(Base):
         back_populates="check_item_list",
         cascade="all, delete-orphan"
     )
-    check_rules: Mapped[list["CheckRule"]] = relationship(
-        "CheckRule",
-        back_populates="check_item_list",
-        cascade="all, delete-orphan"
-    )
