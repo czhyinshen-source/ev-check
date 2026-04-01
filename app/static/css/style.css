@@ -1277,3 +1277,62 @@ select {
     transition: width 0.3s;
     width: 0%;
 }
+
+/* Tree Select Styles */
+.tree-node-group {
+    border: 1px solid rgba(71, 85, 105, 0.4);
+    background: rgba(30, 41, 59, 0.3);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+.tree-node-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 15px;
+    cursor: pointer;
+    user-select: none;
+    background: rgba(15, 23, 42, 0.4);
+    transition: background 0.2s;
+}
+.tree-node-header:hover {
+    background: rgba(15, 23, 42, 0.8);
+}
+.tree-toggle {
+    margin-right: 8px;
+    font-size: 12px;
+    color: #94a3b8;
+    transition: transform 0.2s;
+}
+.tree-toggle.expanded {
+    transform: rotate(90deg);
+}
+.tree-node-title {
+    flex: 1;
+    margin-left: 8px;
+    font-weight: 500;
+}
+.tree-children {
+    padding: 10px 15px 10px 40px;
+    display: none;
+    border-top: 1px solid rgba(71, 85, 105, 0.2);
+}
+.tree-children.expanded {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.tree-leaf {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: pointer;
+}
+.tree-leaf input[type="checkbox"] {
+    margin: 0;
+}
+.tree-leaf-label {
+    flex: 1;
+    user-select: none;
+    color: #e2e8f0;
+}
