@@ -150,6 +150,30 @@ async def toggle_check_rule(rule_id: int, db: AsyncSession = Depends(get_db)):
     return await get_check_rule(rule_id, db)
 
 
+@router.post("/{rule_id}/execute")
+async def execute_check_rule(
+    rule_id: int, 
+    db: AsyncSession = Depends(get_db), 
+    _: User = Depends(get_current_active_user)
+):
+    """手动执行检查规则"""
+    result = await db.execute(select(CheckRule).where(CheckRule.id == rule_id))
+    rule = result.scalar_one_or_none()
+    if not rule:
+        raise HTTPException(status_code=404, detail="检查规则不存在")
+        
+    if not rule.allow_manual_execution:
+        raise HTTPException(status_code=400, detail="此检查规则不允许手动执行")
+        
+    from app.tasks.check_tasks import execute_batch_check_task
+    task = execute_batch_check_task.delay(rule_id=rule_id)
+    
+    return {
+        "message": "已触发执行任务",
+        "task_id": task.id
+    }
+
+
 @router.delete("/{rule_id}")
 async def delete_check_rule(
     rule_id: int,

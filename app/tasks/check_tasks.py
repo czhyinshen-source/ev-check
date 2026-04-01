@@ -19,16 +19,7 @@ class CheckTaskCallback(Task):
         print(f"检查任务 {task_id} 失败: {exc}")
 
 
-def run_check(result_id: int, rule_id: int, communication_id: int, snapshot_id: int):
-    """
-    执行检查任务的同步包装函数
-
-    Args:
-        result_id: 检查结果ID
-        rule_id: 检查规则ID
-        communication_id: 通信机ID
-        snapshot_id: 快照ID
-    """
+def run_check(result_id: int, rule_id: int, communication_id: int):
     import asyncio
     import traceback
 
@@ -40,7 +31,6 @@ def run_check(result_id: int, rule_id: int, communication_id: int, snapshot_id: 
                     result_id=result_id,
                     rule_id=rule_id,
                     communication_id=communication_id,
-                    snapshot_id=snapshot_id,
                 )
                 return {
                     "status": "success",
@@ -69,32 +59,21 @@ def run_check(result_id: int, rule_id: int, communication_id: int, snapshot_id: 
 
     return asyncio.run(_execute())
 
-
 @celery_app.task(
     bind=True,
     base=CheckTaskCallback,
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 3, "countdown": 60},
-    soft_time_limit=3600,  # 1小时软限制
-    time_limit=3900,  # 1小时5分钟硬限制
+    soft_time_limit=3600,
+    time_limit=3900,
 )
 def execute_check_task(
     self,
     result_id: int,
     rule_id: int,
     communication_id: int,
-    snapshot_id: int,
 ):
-    """
-    执行单机检查任务
-
-    Args:
-        result_id: 检查结果ID
-        rule_id: 检查规则ID
-        communication_id: 通信机ID
-        snapshot_id: 快照ID
-    """
-    return run_check(result_id, rule_id, communication_id, snapshot_id)
+    return run_check(result_id, rule_id, communication_id)
 
 
 @celery_app.task(
@@ -106,38 +85,20 @@ def execute_check_task(
 def execute_batch_check_task(
     self,
     rule_id: int,
-    communication_ids: list,
-    snapshot_id: int,
 ):
-    """
-    批量检查协调任务
-
-    为每台通信机创建独立的检查任务
-
-    Args:
-        rule_id: 检查规则ID
-        communication_ids: 通信机ID列表
-        snapshot_id: 快照ID
-    """
     import asyncio
 
     async def _execute():
         async with async_session_maker() as db:
             service = CheckExecutionService(db)
-            results = await service.start_batch_check(
-                rule_id=rule_id,
-                communication_ids=communication_ids,
-                snapshot_id=snapshot_id,
-            )
+            results = await service.execute_rule(rule_id)
 
-            # 为每个检查结果创建异步任务
             task_ids = []
             for result in results:
                 task = execute_check_task.delay(
                     result_id=result.id,
                     rule_id=rule_id,
                     communication_id=result.communication_id,
-                    snapshot_id=snapshot_id,
                 )
                 task_ids.append(task.id)
 
