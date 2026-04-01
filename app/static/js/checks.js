@@ -1,413 +1,463 @@
 // 检查执行模块
 
-let currentTaskId = null;
+let checkRules = [];
+let currentRuleId = null;
+let currentTaskIds = []; // 批量执行任务IDs
 let progressPollInterval = null;
 
-// 打开检查执行模态框
-function openCheckModal() {
-    document.getElementById('checkRule').value = '';
-    document.getElementById('checkCommunication').value = '';
-    document.getElementById('checkSnapshot').value = '';
-    loadCheckRules();
-    loadCommunicationsForCheck();
-    loadSnapshotsForCheck();
-    document.getElementById('checkModal').classList.add('active');
-}
+// 字典用于显示名称
+let dicts = {
+    communication: { items: {}, groups: {} },
+    checkItem: { items: {}, groups: {} },
+    snapshot: { items: {}, groups: {} }
+};
 
-// 关闭检查模态框
-function closeCheckModal() {
-    document.getElementById('checkModal').classList.remove('active');
-    if (progressPollInterval) {
-        clearInterval(progressPollInterval);
-        progressPollInterval = null;
+// 当前编辑窗体选中的关联状体
+let selectedRelations = {
+    communication: { ids: [], group_ids: [] },
+    checkItem: { ids: [], group_ids: [] },
+    snapshot: { ids: [], group_ids: [] }
+};
+
+let currentModalType = null; // 'communication', 'checkItem', 'snapshot'
+let currentModalTab = 'individual'; // 'individual' or 'group'
+
+// 聚合数据加载
+async function loadDictionaries() {
+    try {
+        const headers = window.shared.getHeaders();
+        const base = window.shared.API_BASE + '/api/v1';
+        
+        const [
+            comms, commGroups, 
+            citems, clists, 
+            snaps, snapGroups
+        ] = await Promise.all([
+            fetch(`${base}/communications`, {headers}).then(r => r.json()),
+            fetch(`${base}/communications/groups`, {headers}).then(r => r.json()),
+            fetch(`${base}/check-items`, {headers}).then(r => r.json()),
+            fetch(`${base}/check-items/lists`, {headers}).then(r => r.json()),
+            fetch(`${base}/snapshots`, {headers}).then(r => r.json()),
+            fetch(`${base}/snapshots/groups`, {headers}).then(r => r.json())
+        ]);
+
+        comms.forEach(c => dicts.communication.items[c.id] = c);
+        commGroups.forEach(g => dicts.communication.groups[g.id] = g);
+        
+        citems.forEach(c => dicts.checkItem.items[c.id] = c);
+        clists.forEach(l => dicts.checkItem.groups[l.id] = l);
+        
+        snaps.forEach(s => dicts.snapshot.items[s.id] = s);
+        snapGroups.forEach(g => dicts.snapshot.groups[g.id] = g);
+    } catch (e) {
+        console.error("Failed to load dictionaries", e);
     }
 }
 
-// 加载检查规则
+// ---------------------- 规则列表管理 ----------------------
+
 async function loadCheckRules() {
+    await loadDictionaries(); // 确保字典加载
     try {
         const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules`, { headers: window.shared.getHeaders() });
-        const rules = await res.json();
-        const select = document.getElementById('checkRule');
-        select.innerHTML = `<option value="">请选择规则</option>` + rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+        checkRules = await res.json();
+        renderRuleTree();
+        
+        if (currentRuleId) {
+            selectRule(currentRuleId);
+        }
     } catch (e) { console.error('加载检查规则失败:', e); }
 }
 
-// 加载通信机到检查执行模态框
-async function loadCommunicationsForCheck() {
-    try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() });
-        const comms = await res.json();
-        const select = document.getElementById('checkCommunication');
-        select.innerHTML = `<option value="">请选择通信机</option>` + comms.map(c => `<option value="${c.id}">${c.name} (${c.ip_address})</option>`).join('');
-    } catch (e) { console.error('加载通信机失败:', e); }
+function renderRuleTree() {
+    const tree = document.getElementById('ruleTree');
+    if (!checkRules.length) {
+        tree.innerHTML = '<li style="padding:15px;color:#999;text-align:center;">暂无规则</li>';
+        return;
+    }
+    
+    tree.innerHTML = checkRules.map(rule => `
+        <li>
+            <div class="group-item ${currentRuleId === rule.id ? 'active' : ''}" onclick="selectRule(${rule.id})">
+                <span class="icon">${rule.is_active ? '🟢' : '⚪'}</span>
+                <span>${rule.name}</span>
+            </div>
+        </li>
+    `).join('');
 }
 
-// 加载快照到检查执行模态框
-async function loadSnapshotsForCheck() {
-    try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/snapshots`, { headers: window.shared.getHeaders() });
-        const snapshots = await res.json();
-        const select = document.getElementById('checkSnapshot');
-        select.innerHTML = `<option value="">请选择快照</option>` + snapshots.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
-    } catch (e) { console.error('加载快照失败:', e); }
+function createNewRule() {
+    currentRuleId = null;
+    document.getElementById('ruleForm').reset();
+    document.getElementById('ruleIsActive').checked = true;
+    document.getElementById('ruleAllowManual').checked = true;
+    
+    selectedRelations = {
+        communication: { ids: [], group_ids: [] },
+        checkItem: { ids: [], group_ids: [] },
+        snapshot: { ids: [], group_ids: [] }
+    };
+    
+    renderRelationsPills();
+    
+    document.getElementById('ruleDetailSection').style.display = 'block';
+    document.getElementById('ruleEmptyState').style.display = 'none';
+    document.getElementById('ruleDetailTitle').innerText = '新建规则';
+    document.getElementById('executeRuleBtn').style.display = 'none';
+    document.getElementById('toggleRuleBtn').style.display = 'none';
+    
+    renderRuleTree(); // 取消高亮
 }
 
-// 启动检查
-async function startCheck() {
-    const ruleId = document.getElementById('checkRule').value;
-    const commId = document.getElementById('checkCommunication').value;
-    const snapshotId = document.getElementById('checkSnapshot').value;
+function selectRule(id) {
+    currentRuleId = id;
+    const rule = checkRules.find(r => r.id === id);
+    if (!rule) return;
+    
+    document.getElementById('ruleDetailSection').style.display = 'block';
+    document.getElementById('ruleEmptyState').style.display = 'none';
+    document.getElementById('ruleDetailTitle').innerText = `规则: ${rule.name}`;
+    document.getElementById('executeRuleBtn').style.display = rule.allow_manual_execution ? 'inline-block' : 'none';
+    
+    const toggleBtn = document.getElementById('toggleRuleBtn');
+    toggleBtn.style.display = 'inline-block';
+    toggleBtn.innerText = rule.is_active ? '暂停规则' : '启用规则';
+    toggleBtn.className = rule.is_active ? 'btn btn-warning' : 'btn btn-success';
 
-    if (!ruleId) { alert('请选择检查规则'); return; }
-    if (!commId) { alert('请选择通信机'); return; }
-    if (!snapshotId) { alert('请选择快照'); return; }
+    // 填充表单
+    document.getElementById('ruleName').value = rule.name || '';
+    document.getElementById('ruleCron').value = rule.cron_expression || '';
+    document.getElementById('ruleDescription').value = rule.description || '';
+    document.getElementById('ruleIsActive').checked = rule.is_active;
+    document.getElementById('ruleAllowManual').checked = rule.allow_manual_execution;
+    
+    // 初始化选区状态
+    selectedRelations = {
+        communication: { ids: [...(rule.communication_ids||[])], group_ids: [...(rule.communication_group_ids||[])] },
+        checkItem: { ids: [...(rule.check_item_ids||[])], group_ids: [...(rule.check_item_list_ids||[])] },
+        snapshot: { ids: [...(rule.snapshot_ids||[])], group_ids: [...(rule.snapshot_group_ids||[])] }
+    };
+    
+    renderRelationsPills();
+    renderRuleTree();
+}
+
+function renderRelationsPills() {
+    const renderPill = (type, isGroup, id) => {
+        let dict = isGroup ? dicts[type].groups : dicts[type].items;
+        let item = dict[id];
+        let name = item ? (item.name || item.ip_address) : `ID:${id}`;
+        let prefix = isGroup ? '📁 ' : '📄 ';
+        return `<div class="pill">${prefix}${name} <span style="cursor:pointer;margin-left:5px" onclick="removeRelationPill('${type}', ${isGroup}, ${id})">×</span></div>`;
+    };
+
+    const containerMap = {
+        communication: 'ruleCommPills',
+        checkItem: 'ruleCheckItemPills',
+        snapshot: 'ruleSnapshotPills'
+    };
+
+    Object.keys(selectedRelations).forEach(type => {
+        let html = '';
+        selectedRelations[type].ids.forEach(id => html += renderPill(type, false, id));
+        selectedRelations[type].group_ids.forEach(id => html += renderPill(type, true, id));
+        
+        let container = document.getElementById(containerMap[type]);
+        if (!html) {
+            container.innerHTML = '<p class="text-muted">未选择</p>';
+        } else {
+            container.innerHTML = html;
+        }
+    });
+}
+
+function removeRelationPill(type, isGroup, id) {
+    let arr = isGroup ? selectedRelations[type].group_ids : selectedRelations[type].ids;
+    let idx = arr.indexOf(id);
+    if (idx > -1) {
+        arr.splice(idx, 1);
+        renderRelationsPills();
+    }
+}
+
+async function saveCurrentRule() {
+    const payload = {
+        name: document.getElementById('ruleName').value,
+        description: document.getElementById('ruleDescription').value,
+        cron_expression: document.getElementById('ruleCron').value || null,
+        is_active: document.getElementById('ruleIsActive').checked,
+        allow_manual_execution: document.getElementById('ruleAllowManual').checked,
+        
+        communication_ids: selectedRelations.communication.ids,
+        communication_group_ids: selectedRelations.communication.group_ids,
+        check_item_ids: selectedRelations.checkItem.ids,
+        check_item_list_ids: selectedRelations.checkItem.group_ids,
+        snapshot_ids: selectedRelations.snapshot.ids,
+        snapshot_group_ids: selectedRelations.snapshot.group_ids,
+        time_window_start: null,
+        time_window_end: null,
+        time_window_weekdays: null
+    };
+
+    if (!payload.name) return alert('请输入规则名称');
 
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/start`, {
-            method: 'POST',
-            headers: { ...getHeaders(), 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                rule_id: parseInt(ruleId),
-                communication_id: parseInt(commId),
-                snapshot_id: parseInt(snapshotId)
-            })
+        let url = `${window.shared.API_BASE}/api/v1/check-rules`;
+        let method = 'POST';
+        if (currentRuleId) {
+            url += `/${currentRuleId}`;
+            method = 'PUT';
+        }
+
+        const res = await fetch(url, {
+            method,
+            headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
 
-        if (!res.ok) {
-            const err = await res.json();
-            alert('启动检查失败: ' + (err.detail || err.message || '未知错误'));
-            return;
-        }
-
-        const data = await res.json();
-        alert('检查任务已创建，任务ID: ' + data.id);
-        closeCheckModal();
-        loadCheckResults();
-
-        // 开始轮询进度
-        if (data.id) {
-            currentTaskId = data.id;
-            startProgressPolling(data.id);
-        }
-
+        if (!res.ok) throw new Error((await res.json()).detail || 'Failed');
+        alert(currentRuleId ? '规则已更新!' : '规则已创建!');
+        
+        const created = await res.json();
+        currentRuleId = created.id;
+        loadCheckRules();
     } catch (e) {
-        console.error('启动检查失败:', e);
-        alert('启动检查失败: ' + e.message);
+        alert('保存失败: ' + e.message);
     }
 }
 
-// 开始轮询检查进度
-function startProgressPolling(resultId) {
-    if (progressPollInterval) {
-        clearInterval(progressPollInterval);
-    }
-    progressPollInterval = setInterval(() => pollProgress(resultId), 2000);
-}
-
-// 轮询检查进度
-async function pollProgress(resultId) {
+async function toggleCurrentRule() {
+    if (!currentRuleId) return;
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/${resultId}/progress`, { headers: window.shared.getHeaders() });
-        if (!res.ok) {
-            clearInterval(progressPollInterval);
-            return;
-        }
-
-        const data = await res.json();
-        updateProgressDisplay(data);
-
-        // 检查是否完成
-        if (data.status === 'success' || data.status === 'failed' || data.status === 'cancelled') {
-            clearInterval(progressPollInterval);
-            progressPollInterval = null;
-            loadCheckResults();
-        }
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}/toggle`, {
+            method: 'PATCH',
+            headers: window.shared.getHeaders()
+        });
+        if (!res.ok) throw new Error((await res.json()).detail);
+        loadCheckRules();
     } catch (e) {
-        console.error('获取进度失败:', e);
+        alert('状态切换失败: ' + e.message);
     }
 }
 
-// 更新进度显示
-function updateProgressDisplay(data) {
-    // 更新检查执行标签页的进度显示（如果可见）
-    const progressSection = document.getElementById('currentTaskProgress');
-    if (progressSection && data.status === 'running') {
-        progressSection.style.display = 'block';
-        const progressBar = progressSection.querySelector('.progress-bar-fill');
-        const progressText = progressSection.querySelector('.progress-text');
-        const currentItem = progressSection.querySelector('.current-item');
-
-        if (progressBar) {
-            progressBar.style.width = data.progress + '%';
-        }
-        if (progressText) {
-            progressText.textContent = `进度: ${data.progress}% (${data.completed_items || 0}/${data.total_items || 0})`;
-        }
-        if (currentItem && data.current_item) {
-            currentItem.textContent = `当前: ${data.current_item}`;
-        }
-    }
-}
-
-// 加载检查结果
-async function loadCheckResults() {
+async function deleteCurrentRule() {
+    if (!currentRuleId) return;
+    if (!confirm("确认删除此规则吗？将同时取消相关的后台调度！")) return;
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks`, { headers: window.shared.getHeaders() });
-        const data = await res.json();
-        const tbody = document.getElementById('checkTable');
-        tbody.innerHTML = data.map(c => `
-            <tr>
-                <td>${c.id}</td>
-                <td>${c.rule_name || c.rule_id || '-'}</td>
-                <td>${c.communication_name || c.communication_id || '-'}</td>
-                <td>${getStatusBadge(c.status)}</td>
-                <td>${c.progress}%</td>
-                <td>${new Date(c.start_time).toLocaleString()}</td>
-                <td>
-                    ${c.status === 'running' ? `<button class="btn btn-danger btn-sm" onclick="cancelCheck(${c.id})">取消</button>` : ''}
-                    <button class="btn btn-primary btn-sm" onclick="viewCheckResult(${c.id})">查看</button>
-                </td>
-            </tr>
-        `).join('');
-
-        // 更新最近检查状态
-        if (data.length > 0) {
-            const lastStatus = data[0].status;
-            const el = document.getElementById('lastCheckStatus');
-            el.textContent = getStatusText(lastStatus);
-            el.className = 'value ' + getStatusClass(lastStatus);
-        }
-    } catch (e) { console.error('加载检查结果失败:', e); }
-}
-
-// 取消检查
-async function cancelCheck(resultId) {
-    if (!confirm('确定要取消该检查任务吗？')) return;
-
-    try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/${resultId}`, {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}`, {
             method: 'DELETE',
             headers: window.shared.getHeaders()
         });
-
-        if (res.ok || res.status === 204) {
-            alert('检查任务已取消');
-            loadCheckResults();
-            if (progressPollInterval) {
-                clearInterval(progressPollInterval);
-                progressPollInterval = null;
-            }
-        } else {
-            alert('取消失败');
-        }
+        if (!res.ok) throw new Error((await res.json()).detail);
+        
+        currentRuleId = null;
+        document.getElementById('ruleDetailSection').style.display = 'none';
+        document.getElementById('ruleEmptyState').style.display = 'block';
+        loadCheckRules();
     } catch (e) {
-        console.error('取消检查失败:', e);
-        alert('取消失败: ' + e.message);
+        alert('删除失败: ' + e.message);
     }
 }
 
-// 删除检查结果
-async function deleteCheckResult(id) {
-    if (!confirm('确定删除此检查结果?')) return;
-    try {
-        await fetch(`${window.shared.API_BASE}/api/v1/checks/${id}`, { method: 'DELETE' });
-        loadCheckResults();
-    } catch (e) { console.error(e); }
+// ---------------------- 选取关系 Multi-Select Modal ----------------------
+
+function openMultiSelectModal(type) {
+    currentModalType = type;
+    const titleMap = {
+        communication: '选择目标通信机',
+        checkItem: '选择检查项',
+        snapshot: '选择基准快照'
+    };
+    document.getElementById('multiSelectTitle').innerText = titleMap[type] || '选择目标';
+    document.getElementById('multiSelectSearch').value = '';
+    switchMultiSelectTab('individual'); // 默认显示独立列表
+    
+    // 打开
+    document.getElementById('multiSelectModal').classList.add('active');
 }
 
-// 查看检查结果详情
-async function viewCheckResult(id) {
-    try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/${id}`, { headers: window.shared.getHeaders() });
-        const data = await res.json();
-        const content = document.getElementById('reportDetailContent');
+function closeMultiSelectModal() {
+    document.getElementById('multiSelectModal').classList.remove('active');
+}
 
-        // 计算摘要
-        const summary = data.summary || { total: 0, passed: 0, failed: 0, errors: 0 };
+function switchMultiSelectTab(tab) {
+    currentModalTab = tab;
+    // 切换按钮高亮
+    document.getElementById('tabIndividualBtn').className = tab === 'individual' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+    document.getElementById('tabGroupBtn').className = tab === 'group' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
+    
+    // 切换列表可见性
+    document.getElementById('multiSelectIndividualList').style.display = tab === 'individual' ? 'flex' : 'none';
+    document.getElementById('multiSelectGroupList').style.display = tab === 'group' ? 'flex' : 'none';
+    
+    renderMultiSelectItems();
+}
 
-        // 计算时长
-        let duration = '';
-        if (data.duration_seconds) {
-            const mins = Math.floor(data.duration_seconds / 60);
-            const secs = data.duration_seconds % 60;
-            duration = mins > 0 ? `${mins}分${secs}秒` : `${secs}秒`;
-        }
+function filterMultiSelect() {
+    renderMultiSelectItems();
+}
 
-        content.innerHTML = `
-            <div style="margin-bottom:15px;">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                    <div><strong>规则:</strong> ${data.rule_name || '-'}</div>
-                    <div><strong>通信机:</strong> ${data.communication_name || '-'} (${data.communication_ip || '-'})</div>
-                    <div><strong>快照:</strong> ${data.snapshot_name || data.snapshot_id || '-'}</div>
-                    <div><strong>状态:</strong> ${getStatusBadge(data.status)}</div>
-                    <div><strong>开始时间:</strong> ${new Date(data.start_time).toLocaleString()}</div>
-                    <div><strong>结束时间:</strong> ${data.end_time ? new Date(data.end_time).toLocaleString() : '-'}</div>
-                    <div><strong>时长:</strong> ${duration || '-'}</div>
-                    <div><strong>进度:</strong> ${data.progress}%</div>
-                </div>
-                ${data.error_message ? `<div style="color:#f5222d;margin-top:10px;padding:10px;background:#fff2f0;border-radius:6px;"><strong>错误信息:</strong> ${data.error_message}</div>` : ''}
-            </div>
-
-            <div style="display:flex;gap:15px;margin:15px 0;">
-                <div class="stat-card" style="flex:1;text-align:center;">
-                    <h3>总计</h3>
-                    <div class="value">${summary.total}</div>
-                </div>
-                <div class="stat-card" style="flex:1;text-align:center;">
-                    <h3>通过</h3>
-                    <div class="value success">${summary.passed}</div>
-                </div>
-                <div class="stat-card" style="flex:1;text-align:center;">
-                    <h3>失败</h3>
-                    <div class="value error">${summary.failed}</div>
-                </div>
-                <div class="stat-card" style="flex:1;text-align:center;">
-                    <h3>错误</h3>
-                    <div class="value warning">${summary.errors}</div>
-                </div>
-            </div>
-
-            <h4 style="margin:15px 0 10px;">检查详情</h4>
-            <table>
-                <thead>
-                    <tr>
-                        <th>检查项</th>
-                        <th>类型</th>
-                        <th>状态</th>
-                        <th>期望值</th>
-                        <th>实际值</th>
-                        <th>消息</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${data.details && data.details.length > 0 ? data.details.map(d => `
-                        <tr>
-                            <td>${d.check_item_name || d.check_item_id}</td>
-                            <td>${d.check_item_type || '-'}</td>
-                            <td>${getDetailStatusBadge(d.status)}</td>
-                            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;" title="${JSON.stringify(d.expected_value) || ''}">${JSON.stringify(d.expected_value) || '-'}</td>
-                            <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;" title="${JSON.stringify(d.actual_value) || ''}">${JSON.stringify(d.actual_value) || '-'}</td>
-                            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;" title="${d.message || ''}">${d.message || '-'}</td>
-                        </tr>
-                    `).join('') : '<tr><td colspan="6" style="text-align:center;color:#999;">暂无详情</td></tr>'}
-                </tbody>
-            </table>
+function renderMultiSelectItems() {
+    const listId = currentModalTab === 'individual' ? 'multiSelectIndividualList' : 'multiSelectGroupList';
+    const container = document.getElementById(listId);
+    const kw = document.getElementById('multiSelectSearch').value.toLowerCase();
+    
+    let dictObj = currentModalTab === 'individual' ? dicts[currentModalType].items : dicts[currentModalType].groups;
+    let selectedArr = currentModalTab === 'individual' ? selectedRelations[currentModalType].ids : selectedRelations[currentModalType].group_ids;
+    
+    let html = '';
+    let count = 0;
+    
+    const items = Object.values(dictObj);
+    items.forEach(item => {
+        let txt = item.name || item.ip_address || ('ID ' + item.id);
+        if (kw && txt.toLowerCase().indexOf(kw) === -1) return;
+        
+        let checked = selectedArr.includes(item.id) ? 'checked' : '';
+        html += `
+            <label class="select-item" style="display:flex; align-items:center; gap:10px; padding: 10px; background: #fff; border: 1px solid #eee; border-radius: 4px; cursor: pointer;">
+                <input type="checkbox" value="${item.id}" class="ms-checkbox" ${checked}>
+                <span>${txt}</span>
+            </label>
         `;
-        document.getElementById('reportDetailModal').classList.add('active');
-    } catch (e) { console.error('查看检查结果失败:', e); }
+        count++;
+    });
+    
+    if (count === 0) {
+        html = '<p class="text-muted" style="text-align:center; padding: 20px;">没有找到相符的数据</p>';
+    }
+    
+    container.innerHTML = html;
+    updateMultiSelectCount();
+    
+    // 监听打钩实时的数字变化（不写死事件绑定，而是在点击时更新状态）
+    const checkboxes = container.querySelectorAll('.ms-checkbox');
+    checkboxes.forEach(cb => cb.addEventListener('change', (e) => {
+        let val = parseInt(e.target.value);
+        if (e.target.checked) {
+            if (!selectedArr.includes(val)) selectedArr.push(val);
+        } else {
+            selectedArr = selectedArr.filter(i => i !== val);
+        }
+        
+        // 存回引用
+        if (currentModalTab === 'individual') {
+            selectedRelations[currentModalType].ids = selectedArr;
+        } else {
+            selectedRelations[currentModalType].group_ids = selectedArr;
+        }
+        
+        updateMultiSelectCount();
+    }));
 }
 
-// 获取状态显示文本
-function getStatusText(status) {
-    const map = {
-        'success': '通过',
-        'failed': '失败',
-        'running': '进行中',
-        'pending': '等待中',
-        'cancelled': '已取消',
-        'completed_with_errors': '部分失败'
-    };
-    return map[status] || status || '-';
+function updateMultiSelectCount() {
+    let idsCount = selectedRelations[currentModalType].ids.length;
+    let grpsCount = selectedRelations[currentModalType].group_ids.length;
+    document.getElementById('multiSelectCount').innerText = `已选择: ${idsCount} 项, ${grpsCount} 组`;
 }
 
-// 获取状态样式类
-function getStatusClass(status) {
-    const map = {
-        'success': 'success',
-        'failed': 'error',
-        'running': 'warning',
-        'pending': 'info',
-        'cancelled': '',
-        'completed_with_errors': 'warning'
-    };
-    return map[status] || '';
+function confirmMultiSelect() {
+    renderRelationsPills();
+    closeMultiSelectModal();
 }
 
-// 获取状态徽章 HTML
-function getStatusBadge(status) {
-    const cls = getStatusClass(status);
-    return `<span class="status-badge ${cls}">${getStatusText(status)}</span>`;
-}
+// ---------------------- 规则执行及进度监听 ----------------------
 
-// 获取详情状态徽章
-function getDetailStatusBadge(status) {
-    const map = {
-        'pass': 'success',
-        'fail': 'error',
-        'error': 'warning'
-    };
-    const cls = map[status] || '';
-    const text = status === 'pass' ? '通过' : status === 'fail' ? '失败' : status === 'error' ? '错误' : status;
-    return `<span class="status-badge ${cls}">${text}</span>`;
-}
-
-// 加载当前任务状态
-async function loadCurrentTask() {
+async function executeCurrentRule() {
+    if (!currentRuleId) return;
+    if (!confirm("确认马上在后台执行该规则？")) return;
+    
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks/current`, { headers: window.shared.getHeaders() });
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}/execute`, {
+            method: 'POST',
+            headers: window.shared.getHeaders()
+        });
+        
+        if (!res.ok) throw new Error((await res.json()).detail || 'Execution Failed');
+        
         const data = await res.json();
+        alert('规则任务已投入后台执行，Celery Task ID: ' + data.task_id);
+        
+        // 我们尝试拉取最新的CheckResult从而跟踪进度
+        setTimeout(loadCurrentMultiTasksProgress, 1000); // 1s 后探测
+    } catch (e) {
+        alert('执行启动失败: ' + e.message);
+    }
+}
 
-        const progressSection = document.getElementById('currentTaskProgress');
-        if (!progressSection) return;
-
-        if (data.exists && data.status === 'running') {
-            progressSection.style.display = 'block';
-            const progressBar = progressSection.querySelector('.progress-bar-fill');
-            const progressText = progressSection.querySelector('.progress-text');
-            const currentItem = progressSection.querySelector('.current-item');
-
-            if (progressBar) {
-                progressBar.style.width = data.progress + '%';
-            }
-            if (progressText) {
-                progressText.textContent = `${data.rule_name || ''} / ${data.communication_name || ''} - ${data.progress}%`;
-            }
-            if (currentItem) {
-                currentItem.textContent = data.current_item ? `当前: ${data.current_item}` : '';
-            }
-
-            // 开始轮询
+// 修改自原有的进度轮询机制，支持展示规则页最新的批量执行概况
+async function loadCurrentMultiTasksProgress() {
+    try {
+        // 由于 execute 的任务可能产生多条 records，界面可以调用 /api/v1/checks 并取最新记录展示
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks?limit=10`, { headers: window.shared.getHeaders() });
+        const list = await res.json();
+        
+        // 筛选出属于 currentRuleId 的进行任务
+        const activeTasks = list.filter(t => t.rule_id === currentRuleId && t.status === 'running');
+        
+        const progDiv = document.getElementById('ruleExecuteProgress');
+        
+        if (activeTasks.length > 0) {
+            progDiv.style.display = 'block';
+            
+            // 取一个综合进度？或者取第一条展示
+            const topTask = activeTasks[0];
+            document.getElementById('ruleProgressText').innerText = `${topTask.progress}%`;
+            document.getElementById('ruleProgressBarFill').style.width = `${topTask.progress}%`;
+            document.getElementById('ruleProgressMessage').innerText = `正在检查通信机: ${topTask.communication_id || ''}...`;
+            
             if (!progressPollInterval) {
-                startProgressPolling(data.id);
+                progressPollInterval = setInterval(loadCurrentMultiTasksProgress, 2000);
             }
         } else {
-            progressSection.style.display = 'none';
+            // 已没有运行中任务了，如果面板原来是block说明刚跑完
+            if (progDiv.style.display === 'block') {
+                clearInterval(progressPollInterval);
+                progressPollInterval = null;
+                document.getElementById('ruleProgressText').innerText = `100%`;
+                document.getElementById('ruleProgressBarFill').style.width = `100%`;
+                document.getElementById('ruleProgressBarFill').style.background = `#52c41a`;
+                document.getElementById('ruleProgressMessage').innerText = `执行完成`;
+                setTimeout(() => progDiv.style.display = 'none', 3000);
+            }
         }
-    } catch (e) { console.error('加载当前任务失败:', e); }
+    } catch (e) {
+        console.error("加载执行进度失败", e);
+    }
 }
 
-// 从dashboard.js提取的函数：加载规则和通信机到模态框
-async function loadRulesAndCommsForModal() {
-    try {
-        const [rulesRes, commsRes] = await Promise.all([
-            fetch(`${window.shared.API_BASE}/api/v1/check-rules`, { headers: window.shared.getHeaders() }),
-            fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() })
-        ]);
-        const rules = await rulesRes.json();
-        const comms = await commsRes.json();
-
-        document.getElementById('checkRule').innerHTML = '<option value="">请选择规则</option>' +
-            rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
-        document.getElementById('checkCommunication').innerHTML = '<option value="">请选择通信机</option>' +
-            comms.map(c => `<option value="${c.id}">${c.name} (${c.ip_address})</option>`).join('');
-    } catch (e) { console.error(e); }
+// 在页面加载/切换到检查Tab时被外部调用
+function initChecksTab() {
+    loadCheckRules();
 }
 
-// 导出模块
+// ---------------------- 保留原方法以便兼容 ----------------------
+// 原 Dashboard html 还有对 `#checks` tabular 的一些遗留代码依赖，由于已彻底替换布局，原有的 `openCheckModal`, `startCheck` 均已被重构覆盖。不过如果是从别处触发可做兜底
+function openCheckModal() { alert('该功能已迁移至左侧规则列表管理'); }
+function startCheck() { alert('请通过选中规则后点击执行'); }
+function closeCheckModal() { /**/ }
+function loadCheckResults() { /**/ }
+
+
+// 导出接口
 window.checks = {
+    initChecksTab,
+    loadCheckRules,
+    createNewRule,
+    selectRule,
+    saveCurrentRule,
+    toggleCurrentRule,
+    deleteCurrentRule,
+    executeCurrentRule,
+    openMultiSelectModal,
+    closeMultiSelectModal,
+    switchMultiSelectTab,
+    filterMultiSelect,
+    confirmMultiSelect,
+    // 其他不破坏原有报错的空防守方法
     openCheckModal,
-    closeCheckModal,
-    loadCheckResults,
-    viewCheckResult,
     startCheck,
-    cancelCheck,
-    loadCurrentTask,
-    getStatusBadge,
-    getDetailStatusBadge,
-    getStatusText,
-    getStatusClass,
-    deleteCheckResult,
-    // 导出dashboard.js中的特定函数
-    loadRulesAndCommsForModal
+    closeCheckModal,
+    loadCheckResults
 };

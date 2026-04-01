@@ -25,7 +25,7 @@ function initializeDashboard() {
     const token = localStorage.getItem('token');
     if (!token) {
         console.warn('⚠️  未找到token，重定向到登录页面');
-        window.location.href = '/login.html';
+        window.location.href = '/login';
         return;
     }
 
@@ -69,6 +69,11 @@ function initializeTabs() {
                 // 切换到 SSH 密钥标签页时加载密钥列表
                 if (targetId === 'ssh-keys' && window.sshKeys?.loadSSHKeys) {
                     window.sshKeys.loadSSHKeys();
+                }
+                
+                // 切换到 检查执行 标签页时加载规则
+                if (targetId === 'checks' && window.checks?.initChecksTab) {
+                    window.checks.initChecksTab();
                 }
             } else {
                 console.error(`❌ 未找到内容区域: ${targetId}`);

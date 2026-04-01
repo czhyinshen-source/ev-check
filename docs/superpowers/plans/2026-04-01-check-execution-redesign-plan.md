@@ -157,7 +157,7 @@ async def test_execute_rule_expansion(db_session, test_snapshot, test_communicat
 Run: `pytest tests/unit/services/test_check_rule_execute.py -v`
 Expected: FAIL since execution logic does not support flattening associations.
 
-- [ ] **Step 3: Implement Flattening and Execute API**
+- [x] **Step 3: Implement Flattening and Execute API**
 - Implement an `execute_rule` method in `CheckExecutionService` that gathers all specific snapshots/groups, check items/lists, and communications/groups into distinct lists, cross-joins them to build pending CheckResults, and fires Celery jobs.
 - Add `POST /api/v1/check-rules/{id}/execute` to `app/api/check_rules.py`.
 

@@ -129,7 +129,6 @@
                         <table>
                             <thead>
                                 <tr>
-                                    <th>ID</th>
                                     <th>名称</th>
                                     <th>类型</th>
                                     <th>目标路径</th>
@@ -193,37 +192,104 @@
         </div>
         
         <div class="tab-content" id="checks">
-            <!-- 当前任务进度显示 -->
-            <div id="currentTaskProgress" class="section" style="display:none; margin-bottom:20px; background:#e6f7ff; border:1px solid #91d5ff;">
-                <div style="display:flex; align-items:center; gap:15px; margin-bottom:10px;">
-                    <span style="font-weight:500;">当前检查任务:</span>
-                    <span class="progress-text" style="flex:1;">-</span>
-                    <span class="current-item" style="color:#666;"></span>
+            <div class="main-content">
+                <div class="sidebar">
+                    <div class="sidebar-header">
+                        <h3>检查规则管理</h3>
+                        <button class="btn btn-primary btn-sm" onclick="createNewRule()">+ 新建</button>
+                    </div>
+                    <ul class="rule-tree" id="ruleTree">
+                        <!-- 动态渲染 -->
+                    </ul>
                 </div>
-                <div class="progress-bar" style="height:8px; background:#fff; border-radius:4px; overflow:hidden;">
-                    <div class="progress-bar-fill" style="height:100%; background:#1890ff; transition:width 0.3s; width:0%;"></div>
-                </div>
-            </div>
+                
+                <div class="content">
+                    <div class="section" id="ruleDetailSection" style="display: none;">
+                        <div class="action-bar" style="justify-content: space-between;">
+                            <h2 id="ruleDetailTitle" style="margin: 0;">规则编辑</h2>
+                            <div class="rule-actions">
+                                <button class="btn btn-success" id="executeRuleBtn" onclick="executeCurrentRule()">▶ 执行规则</button>
+                                <button class="btn btn-primary" id="toggleRuleBtn" onclick="toggleCurrentRule()">启停</button>
+                                <button class="btn btn-danger" onclick="deleteCurrentRule()">删除</button>
+                            </div>
+                        </div>
+                        
+                        <form id="ruleForm" class="rule-form">
+                            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                                <div class="form-group">
+                                    <label>规则名称:</label>
+                                    <input type="text" id="ruleName" required class="form-control">
+                                </div>
+                                <div class="form-group">
+                                    <label>定时任务 (Cron表达式):</label>
+                                    <input type="text" id="ruleCron" placeholder="例如: 0 0 * * *" class="form-control">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>任务描述:</label>
+                                <textarea id="ruleDescription" class="form-control" rows="2"></textarea>
+                            </div>
+                            <div class="form-group" style="display: flex; gap: 20px; align-items: center;">
+                                <label><input type="checkbox" id="ruleIsActive"> 启用规则</label>
+                                <label><input type="checkbox" id="ruleAllowManual"> 允许手动执行</label>
+                            </div>
 
-            <div class="section">
-                <div class="action-bar">
-                    <button class="btn btn-primary" onclick="openCheckModal()">+ 启动检查</button>
-                    <button class="btn btn-success" onclick="loadCheckResults()">刷新</button>
+                            <hr style="margin: 20px 0; border: 0; border-top: 1px solid #eaeaea;">
+
+                            <div class="relations-container">
+                                <!-- 通信机关联 -->
+                                <div class="relation-card">
+                                    <div class="relation-header">
+                                        <h4>🎯 目标通信机</h4>
+                                        <button type="button" class="btn btn-sm btn-outline" onclick="openMultiSelectModal('communication')">编辑</button>
+                                    </div>
+                                    <div class="pill-container" id="ruleCommPills">
+                                        <p class="text-muted">未选择</p>
+                                    </div>
+                                </div>
+
+                                <!-- 检查项关联 -->
+                                <div class="relation-card">
+                                    <div class="relation-header">
+                                        <h4>📋 检查项</h4>
+                                        <button type="button" class="btn btn-sm btn-outline" onclick="openMultiSelectModal('checkItem')">编辑</button>
+                                    </div>
+                                    <div class="pill-container" id="ruleCheckItemPills">
+                                        <p class="text-muted">未选择</p>
+                                    </div>
+                                </div>
+
+                                <!-- 快照关联 -->
+                                <div class="relation-card">
+                                    <div class="relation-header">
+                                        <h4>📸 基准快照 (可选)</h4>
+                                        <button type="button" class="btn btn-sm btn-outline" onclick="openMultiSelectModal('snapshot')">编辑</button>
+                                    </div>
+                                    <div class="pill-container" id="ruleSnapshotPills">
+                                        <p class="text-muted">未选择</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="form-actions" style="margin-top: 20px;">
+                                <button type="button" class="btn btn-primary" onclick="saveCurrentRule()">保存规则</button>
+                            </div>
+                        </form>
+
+                        <!-- 执行进度区域 -->
+                        <div id="ruleExecuteProgress" class="execution-progress" style="display:none;">
+                            <h4>任务执行中 (<span id="ruleProgressText">0%</span>)</h4>
+                            <div class="progress-bar">
+                                <div id="ruleProgressBarFill" class="progress-bar-fill"></div>
+                            </div>
+                            <div id="ruleProgressMessage" class="text-muted">准备执行...</div>
+                        </div>
+                    </div>
+                    
+                    <div id="ruleEmptyState" class="empty-state">
+                        <p style="text-align: center; color: #999; margin-top: 100px;">👈 请选择或新建一个检查规则</p>
+                    </div>
                 </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>规则</th>
-                            <th>通信机</th>
-                            <th>状态</th>
-                            <th>进度</th>
-                            <th>开始时间</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="checkTable"></tbody>
-                </table>
             </div>
         </div>
         
@@ -935,8 +1001,7 @@
             const modules = [
                 '/static/js/communications.js?v=14',
                 '/static/js/checkitems.js?v=14',
-                '/static/js/file-formatter.js?v=1',
-                '/static/js/snapshots.js?v=21',
+                '/static/js/snapshots.js?v=18',
                 '/static/js/reports.js',
                 '/static/js/checks.js',
                 '/static/js/ssh-keys.js?v=1',
@@ -964,5 +1029,34 @@
             });
         });
     </script>
+    <!-- 规则关联多选弹窗 -->
+    <div class="modal" id="multiSelectModal">
+        <div class="modal-content" style="max-width: 800px; height: 80vh; display: flex; flex-direction: column;">
+            <div class="modal-header">
+                <h3 id="multiSelectTitle">选择目标</h3>
+                <button class="modal-close" onclick="closeMultiSelectModal()">&times;</button>
+            </div>
+            <div style="padding: 15px; border-bottom: 1px solid #eee; display:flex; gap: 10px;">
+                <input type="text" id="multiSelectSearch" class="search-box" style="flex:1;" placeholder="搜索..." oninput="filterMultiSelect()">
+                <div class="tab-filters" id="multiSelectTabs" style="display:flex; gap:10px;">
+                    <button class="btn btn-primary btn-sm" id="tabIndividualBtn" onclick="switchMultiSelectTab('individual')">独立项</button>
+                    <button class="btn btn-outline btn-sm" id="tabGroupBtn" onclick="switchMultiSelectTab('group')">分组/集合</button>
+                </div>
+            </div>
+            <div class="multi-select-body" style="flex:1; overflow-y:auto; padding: 15px;">
+                <!-- 独立项列表 -->
+                <div id="multiSelectIndividualList" class="select-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+                <!-- 分组列表 -->
+                <div id="multiSelectGroupList" class="select-list" style="display:none; flex-direction: column; gap: 10px;"></div>
+            </div>
+            <div class="modal-footer" style="padding: 15px; border-top: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                <div id="multiSelectCount" class="text-muted">已选择: 0 项, 0 组</div>
+                <div>
+                    <button class="btn btn-default" onclick="closeMultiSelectModal()">取消</button>
+                    <button class="btn btn-primary" onclick="confirmMultiSelect()">确认并保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
