@@ -731,6 +731,7 @@ async function renderAggregatedCheckItems(instances, instanceDataMap, itemMap, c
 }
 
 // 查看快照详情
+async function viewSnapshotDetail(snapshotId) {
     try {
         document.getElementById('snapshotDetailModal').classList.add('active');
         document.getElementById('snapshotInstancesList').innerHTML = '<div class="loading">加载中...</div>';

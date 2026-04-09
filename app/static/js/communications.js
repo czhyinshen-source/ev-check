@@ -32,6 +32,10 @@ function openCommModal(id = null) {
 async function editComm(id) {
     const { API_BASE, getHeaders } = window.shared;
     try {
+        // 先加载选项，防止回显失败
+        await loadGroupsForModal();
+        await loadSSHKeysForModal();
+
         const res = await fetch(`${API_BASE}/api/v1/communications/${id}`, { headers: getHeaders() });
         if (!res.ok) throw new Error('获取通信机信息失败');
         const comm = await res.json();
@@ -52,13 +56,11 @@ async function editComm(id) {
         }
 
         document.getElementById('commModalTitle').textContent = '编辑通信机';
-        await loadGroupsForModal();
-        await loadSSHKeysForModal();
         toggleAuthFields();
         document.getElementById('commModal').classList.add('active');
     } catch (e) {
         console.error('加载通信机信息失败:', e);
-        alert('加载通信机信息失败: ' + e.message);
+        alert('获取详情失败');
     }
 }
 
