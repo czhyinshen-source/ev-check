@@ -124,3 +124,51 @@ async def get_report_details(report_id: int, db: AsyncSession = Depends(get_db))
         },
         "items": items_list
     }
+
+@router.post("/{report_id}/cancel")
+async def cancel_report(
+    report_id: int, 
+    db: AsyncSession = Depends(get_db)
+):
+    """强制终止指定的执行报告及下属任务"""
+    import datetime
+    from app.services.check_lock import get_check_lock_manager
+    
+    result = await db.execute(select(CheckReport).where(CheckReport.id == report_id))
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+        
+    if report.status not in ["running", "pending"]:
+        return {"message": "该报表已经处于完成或终止状态，无需取消。"}
+
+    # 查找挂起的子任务
+    result = await db.execute(
+        select(CheckResult)
+        .where(CheckResult.report_id == report_id)
+        .where(CheckResult.status.in_(["pending", "running"]))
+    )
+    stuck_tasks = result.scalars().all()
+    
+    lock_manager = get_check_lock_manager()
+    
+    # 取消所有子任务
+    for task in stuck_tasks:
+        task.status = "failed"
+        task.error_message = "用户手动强制中断执行"
+        task.end_time = datetime.datetime.utcnow()
+        await lock_manager.release_lock(task.id)
+        
+    # 取消报告本身
+    report.status = "cancelled"
+    report.end_time = datetime.datetime.utcnow()
+    report.failed_nodes += len(stuck_tasks)
+    
+    # 尝试释放全局大锁
+    if await lock_manager.is_locked():
+        await lock_manager.force_release_lock()
+        
+    await db.commit()
+    
+    return {"message": f"已成功强制取消，清理了 {len(stuck_tasks)} 个后台任务"}
+

@@ -207,6 +207,26 @@ function toggleLevel3(el) {
     }
 }
 
+async function terminateReport(reportId) {
+    if (!confirm('确定要强制中断当前正在运行的这个任务吗？')) return;
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/reports/${reportId}/cancel`, {
+            method: 'POST',
+            headers: window.shared.getHeaders()
+        });
+        if (res.ok) {
+            window.shared.showToast('任务已成功终止', 'success');
+            loadReports();
+        } else {
+            const data = await res.json();
+            window.shared.showToast('终止失败: ' + (data.detail || '未知错误'), 'error');
+        }
+    } catch (e) {
+        window.shared.showToast('请求异常', 'error');
+        console.error(e);
+    }
+}
+
 // Window attachment
 window.reports = {
     loadReports,
@@ -216,6 +236,5 @@ window.reports = {
     closeReportDrawer,
     toggleLevel2,
     toggleLevel3,
-    terminateReport: (id) => alert('Terminate API not yet configured.')
+    terminateReport
 };
-
