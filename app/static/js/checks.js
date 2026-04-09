@@ -1,38 +1,34 @@
-// 检查执行模块
+// 检查执行模块 - 控制台优先重构版本
+// 2026-04-07 重塑为 IDE 风格三段式布局
 
 let checkRules = [];
 let currentRuleId = null;
-let currentTaskIds = []; // 批量执行任务IDs
 let progressPollInterval = null;
 
-// 字典用于显示名称
+// 资产字典
 let dicts = {
     communication: { items: {}, groups: {} },
     checkItem: { items: {}, groups: {} },
     snapshot: { items: {}, groups: {} }
 };
 
-// 当前编辑窗体选中的关联状体
+// 当前选中关联状态
 let selectedRelations = {
     communication: { ids: [], group_ids: [] },
     checkItem: { ids: [], group_ids: [] },
     snapshot: { ids: [], group_ids: [] }
 };
 
-let currentModalType = null; // 'communication', 'checkItem', 'snapshot'
-let currentModalTab = 'individual'; // 'individual' or 'group'
+let currentModalType = null; // 当前抽屉类型
 
-// 聚合数据加载
+// ---------------------- 基础数据加载 ----------------------
+
 async function loadDictionaries() {
     try {
         const headers = window.shared.getHeaders();
         const base = window.shared.API_BASE + '/api/v1';
         
-        const [
-            comms, commGroups, 
-            citems, clists, 
-            snaps, snapGroups
-        ] = await Promise.all([
+        const [comms, commGroups, citems, clists, snaps, snapGroups] = await Promise.all([
             fetch(`${base}/communications`, {headers}).then(r => r.json()),
             fetch(`${base}/communications/groups`, {headers}).then(r => r.json()),
             fetch(`${base}/check-items`, {headers}).then(r => r.json()),
@@ -43,71 +39,54 @@ async function loadDictionaries() {
 
         comms.forEach(c => dicts.communication.items[c.id] = c);
         commGroups.forEach(g => dicts.communication.groups[g.id] = g);
-        
         citems.forEach(c => dicts.checkItem.items[c.id] = c);
         clists.forEach(l => dicts.checkItem.groups[l.id] = l);
-        
         snaps.forEach(s => dicts.snapshot.items[s.id] = s);
         snapGroups.forEach(g => dicts.snapshot.groups[g.id] = g);
-    } catch (e) {
-        console.error("Failed to load dictionaries", e);
-    }
+    } catch (e) { console.error("资产字典加载失败:", e); }
 }
 
-// ---------------------- 规则列表管理 ----------------------
+// ---------------------- 规则列表导航 (Sidebar) ----------------------
 
 async function loadCheckRules() {
-    await loadDictionaries(); // 确保字典加载
+    await loadDictionaries();
     try {
         const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules`, { headers: window.shared.getHeaders() });
         checkRules = await res.json();
+        checkRules.sort((a, b) => a.name.localeCompare(b.name));
         renderRuleTree();
-        
-        if (currentRuleId) {
-            selectRule(currentRuleId);
-        }
+        if (currentRuleId) selectRule(currentRuleId);
     } catch (e) { console.error('加载检查规则失败:', e); }
 }
 
 function renderRuleTree() {
     const tree = document.getElementById('ruleTree');
-    if (!checkRules.length) {
-        tree.innerHTML = '<li style="padding:15px;color:#999;text-align:center;">暂无规则</li>';
+    const kw = document.getElementById('ruleSearchInput')?.value.toLowerCase() || '';
+    const filtered = checkRules.filter(r => !kw || r.name.toLowerCase().includes(kw));
+    
+    if (!filtered.length) {
+        tree.innerHTML = '<li class="empty-text">未找到符合要求的规则</li>';
         return;
     }
     
-    tree.innerHTML = checkRules.map(rule => `
-        <li>
-            <div class="group-item ${currentRuleId === rule.id ? 'active' : ''}" onclick="selectRule(${rule.id})">
-                <span class="icon">${rule.is_active ? '🟢' : '⚪'}</span>
-                <span>${rule.name}</span>
-            </div>
-        </li>
-    `).join('');
+    tree.innerHTML = filtered.map(rule => {
+        const dotColor = rule.is_active ? 'var(--success)' : 'var(--text-muted)';
+        return `
+            <li class="rule-item">
+                <div class="group-item ${currentRuleId === rule.id ? 'active' : ''}" onclick="window.checks.selectRule(${rule.id})">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                        <span class="status-dot" style="width:8px; height:8px; border-radius:50%; background:${dotColor}; box-shadow: 0 0 5px ${dotColor};"></span>
+                        <span class="rule-name">${rule.name}</span>
+                    </div>
+                </div>
+            </li>
+        `;
+    }).join('');
 }
 
-function createNewRule() {
-    currentRuleId = null;
-    document.getElementById('ruleForm').reset();
-    document.getElementById('ruleIsActive').checked = true;
-    document.getElementById('ruleAllowManual').checked = true;
-    
-    selectedRelations = {
-        communication: { ids: [], group_ids: [] },
-        checkItem: { ids: [], group_ids: [] },
-        snapshot: { ids: [], group_ids: [] }
-    };
-    
-    renderRelationsPills();
-    
-    document.getElementById('ruleDetailSection').style.display = 'block';
-    document.getElementById('ruleEmptyState').style.display = 'none';
-    document.getElementById('ruleDetailTitle').innerText = '新建规则';
-    document.getElementById('executeRuleBtn').style.display = 'none';
-    document.getElementById('toggleRuleBtn').style.display = 'none';
-    
-    renderRuleTree(); // 取消高亮
-}
+function filterRules() { renderRuleTree(); }
+
+// ---------------------- 规则详情与 Workbench ----------------------
 
 function selectRule(id) {
     currentRuleId = id;
@@ -116,348 +95,418 @@ function selectRule(id) {
     
     document.getElementById('ruleDetailSection').style.display = 'block';
     document.getElementById('ruleEmptyState').style.display = 'none';
-    document.getElementById('ruleDetailTitle').innerText = `规则: ${rule.name}`;
+    document.getElementById('ruleDetailTitle').innerText = rule.name;
     document.getElementById('executeRuleBtn').style.display = rule.allow_manual_execution ? 'inline-block' : 'none';
     
     const toggleBtn = document.getElementById('toggleRuleBtn');
-    toggleBtn.style.display = 'inline-block';
-    toggleBtn.innerText = rule.is_active ? '暂停规则' : '启用规则';
-    toggleBtn.className = rule.is_active ? 'btn btn-warning' : 'btn btn-success';
-
-    // 填充表单
-    document.getElementById('ruleName').value = rule.name || '';
-    document.getElementById('ruleCron').value = rule.cron_expression || '';
-    document.getElementById('ruleDescription').value = rule.description || '';
-    document.getElementById('ruleIsActive').checked = rule.is_active;
-    document.getElementById('ruleAllowManual').checked = rule.allow_manual_execution;
+    if (toggleBtn) {
+        toggleBtn.style.display = 'inline-block';
+        toggleBtn.innerText = rule.is_active ? '暂停规则' : '启用规则';
+        toggleBtn.className = rule.is_active ? 'btn btn-outline' : 'btn btn-success';
+    }
     
-    // 初始化选区状态
+    const deleteBtn = document.getElementById('deleteRuleBtn');
+    if (deleteBtn) {
+        deleteBtn.style.display = 'inline-block';
+    }
+
+    document.getElementById('ruleName').value = rule.name || '';
+    
+    const cronVal = rule.cron_expression || '';
+    const templateSelect = document.getElementById('ruleCronTemplate');
+    const cronInput = document.getElementById('ruleCron');
+    if (templateSelect && cronInput) {
+        let isPreset = false;
+        for(let i = 0; i < templateSelect.options.length; i++) {
+            if (templateSelect.options[i].value === cronVal && cronVal !== 'custom') {
+                isPreset = true;
+                break;
+            }
+        }
+        if (!cronVal) {
+            templateSelect.value = '';
+            cronInput.style.display = 'none';
+            cronInput.value = '';
+        } else if (isPreset) {
+            templateSelect.value = cronVal;
+            cronInput.style.display = 'none';
+            cronInput.value = cronVal;
+        } else {
+            templateSelect.value = 'custom';
+            cronInput.style.display = 'block';
+            cronInput.value = cronVal;
+        }
+    }
+
+    document.getElementById('ruleDescription').value = rule.description || '';
+    
+    const cancelBtn = document.getElementById('cancelRuleBtn');
+    if(cancelBtn) cancelBtn.style.display = 'none';
+    const saveBtn = document.getElementById('saveRuleBtn');
+    if(saveBtn) saveBtn.innerText = '保存规则配置';
+    
     selectedRelations = {
-        communication: { ids: [...(rule.communication_ids||[])], group_ids: [...(rule.communication_group_ids||[])] },
-        checkItem: { ids: [...(rule.check_item_ids||[])], group_ids: [...(rule.check_item_list_ids||[])] },
-        snapshot: { ids: [...(rule.snapshot_ids||[])], group_ids: [...(rule.snapshot_group_ids||[])] }
+        communication: { ids: [...(rule.communication_ids || [])], group_ids: [...(rule.communication_group_ids || [])] },
+        checkItem: { ids: [...(rule.check_item_ids || [])], group_ids: [...(rule.check_item_list_ids || [])] },
+        snapshot: { ids: [...(rule.snapshot_ids || [])], group_ids: [...(rule.snapshot_group_ids || [])] }
     };
     
-    renderRelationsPills();
+    updateSummaryDisplays();
+    renderRuleTree();
+    
+    // 切换规则时立即获取当前正在运行的任务和历史
+    if (progressPollInterval) { clearInterval(progressPollInterval); progressPollInterval = null; }
+    loadCurrentMultiTasksProgress();
+    loadExecutionHistory();
+}
+
+function updateSummaryDisplays() {
+    const summarize = (type) => {
+        const rels = selectedRelations[type];
+        if (!rels.ids.length && !rels.group_ids.length) {
+            return type === 'snapshot' ? '自动对齐最新' : '未配置资产';
+        }
+        let parts = [];
+        if (rels.group_ids.length) parts.push(`📁 ${rels.group_ids.length} 个组/列表`);
+        if (rels.ids.length) parts.push(`📄 ${rels.ids.length} 个项`);
+        return parts.join(' | ');
+    };
+    const commS = document.getElementById('commSummary');
+    const itemS = document.getElementById('itemSummary');
+    const snapS = document.getElementById('snapshotSummary');
+    if (commS) commS.innerText = summarize('communication');
+    if (itemS) itemS.innerText = summarize('checkItem');
+    if (snapS) snapS.innerText = summarize('snapshot');
+}
+
+// ---------------------- 规则 CRUD ----------------------
+
+function createNewRule() {
+    currentRuleId = null;
+    const form = document.getElementById('ruleForm');
+    if (form) form.reset();
+    selectedRelations = { communication: { ids: [], group_ids: [] }, checkItem: { ids: [], group_ids: [] }, snapshot: { ids: [], group_ids: [] } };
+    updateSummaryDisplays();
+    const detail = document.getElementById('ruleDetailSection');
+    const empty = document.getElementById('ruleEmptyState');
+    if (detail) detail.style.display = 'block';
+    if (empty) empty.style.display = 'none';
+    document.getElementById('ruleDetailTitle').innerText = '新增检查规则';
+    document.getElementById('executeRuleBtn').style.display = 'none';
+    document.getElementById('toggleRuleBtn').style.display = 'none';
+    const delBtn = document.getElementById('deleteRuleBtn');
+    if (delBtn) delBtn.style.display = 'none';
+    
+    const cancelBtn = document.getElementById('cancelRuleBtn');
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
+    const saveBtn = document.getElementById('saveRuleBtn');
+    if (saveBtn) saveBtn.innerText = '确认创建';
+    
+    handleCronTemplateChange();
     renderRuleTree();
 }
 
-function renderRelationsPills() {
-    const renderPill = (type, isGroup, id) => {
-        let dict = isGroup ? dicts[type].groups : dicts[type].items;
-        let item = dict[id];
-        let name = item ? (item.name || item.ip_address) : `ID:${id}`;
-        let prefix = isGroup ? '📁 ' : '📄 ';
-        return `<div class="pill">${prefix}${name} <span style="cursor:pointer;margin-left:5px" onclick="removeRelationPill('${type}', ${isGroup}, ${id})">×</span></div>`;
-    };
-
-    const containerMap = {
-        communication: 'ruleCommPills',
-        checkItem: 'ruleCheckItemPills',
-        snapshot: 'ruleSnapshotPills'
-    };
-
-    Object.keys(selectedRelations).forEach(type => {
-        let html = '';
-        selectedRelations[type].ids.forEach(id => html += renderPill(type, false, id));
-        selectedRelations[type].group_ids.forEach(id => html += renderPill(type, true, id));
-        
-        let container = document.getElementById(containerMap[type]);
-        if (!html) {
-            container.innerHTML = '<p class="text-muted">未选择</p>';
-        } else {
-            container.innerHTML = html;
-        }
-    });
+function cancelCreateRule() {
+    currentRuleId = null;
+    const form = document.getElementById('ruleForm');
+    if (form) form.reset();
+    const detail = document.getElementById('ruleDetailSection');
+    const empty = document.getElementById('ruleEmptyState');
+    if (detail) detail.style.display = 'none';
+    if (empty) empty.style.display = 'block';
+    document.querySelectorAll('.rule-item .group-item.active').forEach(el => el.classList.remove('active'));
 }
 
-function removeRelationPill(type, isGroup, id) {
-    let arr = isGroup ? selectedRelations[type].group_ids : selectedRelations[type].ids;
-    let idx = arr.indexOf(id);
-    if (idx > -1) {
-        arr.splice(idx, 1);
-        renderRelationsPills();
+function handleCronTemplateChange() {
+    const template = document.getElementById('ruleCronTemplate');
+    const cronInput = document.getElementById('ruleCron');
+    if (!template || !cronInput) return;
+    if (template.value === 'custom') {
+        cronInput.style.display = 'block';
+    } else {
+        cronInput.style.display = 'none';
+        cronInput.value = template.value;
     }
+
 }
 
 async function saveCurrentRule() {
+    const existingRule = currentRuleId ? checkRules.find(r => r.id === currentRuleId) : null;
+    
+    const templateSelect = document.getElementById('ruleCronTemplate');
+    const cronInput = document.getElementById('ruleCron');
+    let finalCron = null;
+    if (templateSelect && cronInput) {
+        if (templateSelect.value === 'custom') {
+            finalCron = cronInput.value || null;
+        } else if (templateSelect.value !== '') {
+            finalCron = templateSelect.value;
+        }
+    } else {
+        finalCron = cronInput ? (cronInput.value || null) : null;
+    }
+
     const payload = {
         name: document.getElementById('ruleName').value,
         description: document.getElementById('ruleDescription').value,
-        cron_expression: document.getElementById('ruleCron').value || null,
-        is_active: document.getElementById('ruleIsActive').checked,
-        allow_manual_execution: document.getElementById('ruleAllowManual').checked,
-        
+        cron_expression: finalCron,
+        is_active: existingRule ? existingRule.is_active : true,
+        allow_manual_execution: existingRule ? existingRule.allow_manual_execution : true,
         communication_ids: selectedRelations.communication.ids,
         communication_group_ids: selectedRelations.communication.group_ids,
         check_item_ids: selectedRelations.checkItem.ids,
         check_item_list_ids: selectedRelations.checkItem.group_ids,
         snapshot_ids: selectedRelations.snapshot.ids,
-        snapshot_group_ids: selectedRelations.snapshot.group_ids,
-        time_window_start: null,
-        time_window_end: null,
-        time_window_weekdays: null
+        snapshot_group_ids: selectedRelations.snapshot.group_ids
     };
 
     if (!payload.name) return alert('请输入规则名称');
-
     try {
         let url = `${window.shared.API_BASE}/api/v1/check-rules`;
-        let method = 'POST';
-        if (currentRuleId) {
-            url += `/${currentRuleId}`;
-            method = 'PUT';
-        }
+        let method = currentRuleId ? 'PUT' : 'POST';
+        if (currentRuleId) url += `/${currentRuleId}`;
 
         const res = await fetch(url, {
             method,
             headers: { ...window.shared.getHeaders(), 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-
-        if (!res.ok) throw new Error((await res.json()).detail || 'Failed');
-        alert(currentRuleId ? '规则已更新!' : '规则已创建!');
         
-        const created = await res.json();
-        currentRuleId = created.id;
-        loadCheckRules();
-    } catch (e) {
-        alert('保存失败: ' + e.message);
-    }
+        let data;
+        try {
+            data = await res.json();
+        } catch (e) {
+            throw new Error("系统返回数据异常");
+        }
+        
+        if (!res.ok) throw new Error(data.detail || "保存失败");
+        
+        alert(currentRuleId ? '修改成功!' : '新增成功!');
+        currentRuleId = data.id;
+        await loadCheckRules();
+    } catch (e) { alert('保存失败: ' + e.message); }
 }
 
 async function toggleCurrentRule() {
     if (!currentRuleId) return;
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}/toggle`, {
-            method: 'PATCH',
-            headers: window.shared.getHeaders()
-        });
-        if (!res.ok) throw new Error((await res.json()).detail);
+        await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}/toggle`, { method: 'PATCH', headers: window.shared.getHeaders() });
         loadCheckRules();
-    } catch (e) {
-        alert('状态切换失败: ' + e.message);
-    }
+    } catch (e) { alert('状态切换失败: ' + e.message); }
 }
 
 async function deleteCurrentRule() {
-    if (!currentRuleId) return;
-    if (!confirm("确认删除此规则吗？将同时取消相关的后台调度！")) return;
+    if (!currentRuleId || !confirm("确认删除此规则？")) return;
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}`, {
-            method: 'DELETE',
-            headers: window.shared.getHeaders()
-        });
-        if (!res.ok) throw new Error((await res.json()).detail);
-        
+        await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}`, { method: 'DELETE', headers: window.shared.getHeaders() });
         currentRuleId = null;
         document.getElementById('ruleDetailSection').style.display = 'none';
         document.getElementById('ruleEmptyState').style.display = 'block';
         loadCheckRules();
-    } catch (e) {
-        alert('删除失败: ' + e.message);
-    }
+    } catch (e) { alert('删除失败: ' + e.message); }
 }
 
-// ---------------------- 选取关系 Multi-Select Modal ----------------------
+// ---------------------- 资产抽屉 (Tree Selector) ----------------------
 
-function openMultiSelectModal(type) {
+function openAssetDrawer(type) {
     currentModalType = type;
-    const titleMap = {
-        communication: '选择目标通信机',
-        checkItem: '选择检查项',
-        snapshot: '选择基准快照'
-    };
-    document.getElementById('multiSelectTitle').innerText = titleMap[type] || '选择目标';
-    document.getElementById('multiSelectSearch').value = '';
-    switchMultiSelectTab('individual'); // 默认显示独立列表
-    
-    // 打开
-    document.getElementById('multiSelectModal').classList.add('active');
+    const drawer = document.getElementById('assetDrawer');
+    const titleMap = { communication: '选择通信机', checkItem: '选择检查项', snapshot: '选择基准快照' };
+    document.getElementById('drawerTitle').innerText = titleMap[type];
+    document.getElementById('assetSearchInput').value = '';
+    document.getElementById('selectedCount').innerText = `已选 ${selectedRelations[type].ids.length} 项 / ${selectedRelations[type].group_ids.length} 组`;
+    drawer.classList.add('active');
+    renderAssetTree();
 }
 
-function closeMultiSelectModal() {
-    document.getElementById('multiSelectModal').classList.remove('active');
+function closeAssetDrawer() {
+    document.getElementById('assetDrawer').classList.remove('active');
+    updateSummaryDisplays();
 }
 
-function switchMultiSelectTab(tab) {
-    currentModalTab = tab;
-    // 切换按钮高亮
-    document.getElementById('tabIndividualBtn').className = tab === 'individual' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
-    document.getElementById('tabGroupBtn').className = tab === 'group' ? 'btn btn-primary btn-sm' : 'btn btn-outline btn-sm';
-    
-    // 切换列表可见性
-    document.getElementById('multiSelectIndividualList').style.display = tab === 'individual' ? 'flex' : 'none';
-    document.getElementById('multiSelectGroupList').style.display = tab === 'group' ? 'flex' : 'none';
-    
-    renderMultiSelectItems();
+function filterAssetTree() { renderAssetTree(); }
+
+function renderAssetTree() {
+    const container = document.getElementById('assetTreeContainer');
+    const kw = document.getElementById('assetSearchInput').value.toLowerCase();
+    const d = dicts[currentModalType];
+    const tree = buildHierarchy(Object.values(d.groups), Object.values(d.items));
+    container.innerHTML = renderNodeList(tree, 0, kw);
 }
 
-function filterMultiSelect() {
-    renderMultiSelectItems();
-}
-
-function renderMultiSelectItems() {
-    const listId = currentModalTab === 'individual' ? 'multiSelectIndividualList' : 'multiSelectGroupList';
-    const container = document.getElementById(listId);
-    const kw = document.getElementById('multiSelectSearch').value.toLowerCase();
-    
-    let dictObj = currentModalTab === 'individual' ? dicts[currentModalType].items : dicts[currentModalType].groups;
-    let selectedArr = currentModalTab === 'individual' ? selectedRelations[currentModalType].ids : selectedRelations[currentModalType].group_ids;
-    
-    let html = '';
-    let count = 0;
-    
-    const items = Object.values(dictObj);
+function buildHierarchy(groups, items) {
+    const groupMap = {};
+    groups.forEach(g => groupMap[g.id] = { ...g, children: [], items: [], isGroup: true });
+    const root = [];
+    groups.forEach(g => {
+        if (g.parent_id && groupMap[g.parent_id]) groupMap[g.parent_id].children.push(groupMap[g.id]);
+        else root.push(groupMap[g.id]);
+    });
     items.forEach(item => {
-        let txt = item.name || item.ip_address || ('ID ' + item.id);
-        if (kw && txt.toLowerCase().indexOf(kw) === -1) return;
-        
-        let checked = selectedArr.includes(item.id) ? 'checked' : '';
+        const gid = item.group_id || item.list_id;
+        if (gid && groupMap[gid]) groupMap[gid].items.push({ ...item, isGroup: false });
+        else root.push({ ...item, isGroup: false });
+    });
+    return root;
+}
+
+function renderNodeList(nodes, level, kw) {
+    let html = '';
+    nodes.forEach(node => {
+        const type = currentModalType;
+        const isSelected = node.isGroup ? selectedRelations[type].group_ids.includes(node.id) : selectedRelations[type].ids.includes(node.id);
+        const displayName = node.name || node.ip_address || `ID:${node.id}`;
+        if (kw && !displayName.toLowerCase().includes(kw)) return;
+
         html += `
-            <label class="select-item" style="display:flex; align-items:center; gap:10px; padding: 10px; background: #fff; border: 1px solid #eee; border-radius: 4px; cursor: pointer;">
-                <input type="checkbox" value="${item.id}" class="ms-checkbox" ${checked}>
-                <span>${txt}</span>
-            </label>
+            <div class="tree-node" style="padding-left: ${level * 20}px">
+                <label class="tree-item">
+                    <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="window.checks.handleTreeCheck(event, ${node.isGroup}, ${node.id})">
+                    <span class="icon">${node.isGroup ? '📁' : '📄'}</span>
+                    <span class="name">${displayName}</span>
+                </label>
+            </div>
         `;
-        count++;
+        if (node.isGroup) {
+            html += renderNodeList(node.children, level + 1, kw);
+            html += renderNodeList(node.items, level + 1, kw);
+        }
+    });
+    return html || (level === 0 ? '<p class="empty-text">无匹配项</p>' : '');
+}
+
+function handleTreeCheck(event, isGroup, id) {
+    const checked = event.target.checked;
+    const type = currentModalType;
+    
+    if (isGroup) {
+        cascadeSelect(type, id, checked);
+        if (checked && type === 'snapshot') {
+            const group = dicts.snapshot.groups[id];
+            if (group && group.check_item_list_id && !selectedRelations.checkItem.group_ids.includes(group.check_item_list_id)) {
+                selectedRelations.checkItem.group_ids.push(group.check_item_list_id);
+                updateSummaryDisplays();
+            }
+        }
+    } else {
+        const arr = selectedRelations[type].ids;
+        if (checked && !arr.includes(id)) {
+            arr.push(id);
+            if (type === 'snapshot') {
+                autoFillFromSnapshot(id);
+            }
+        }
+        else if (!checked) {
+            const i = arr.indexOf(id);
+            if (i > -1) arr.splice(i, 1);
+        }
+    }
+    
+    document.getElementById('selectedCount').innerText = `已选 ${selectedRelations[type].ids.length} 项 / ${selectedRelations[type].group_ids.length} 组`;
+    renderAssetTree(); 
+}
+
+async function autoFillFromSnapshot(snapshotId) {
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/snapshots/instances?snapshot_id=${snapshotId}`, { headers: window.shared.getHeaders() });
+        const instances = await res.json();
+        let updated = false;
+        
+        instances.forEach(inst => {
+            if (inst.communication_id && !selectedRelations.communication.ids.includes(inst.communication_id)) {
+                selectedRelations.communication.ids.push(inst.communication_id);
+                updated = true;
+            }
+            if (inst.check_item_list_id && !selectedRelations.checkItem.group_ids.includes(inst.check_item_list_id)) {
+                selectedRelations.checkItem.group_ids.push(inst.check_item_list_id);
+                updated = true;
+            }
+        });
+        
+        const snap = dicts.snapshot.items[snapshotId];
+        if (snap && snap.group_id) {
+            const group = dicts.snapshot.groups[snap.group_id];
+            if (group && group.check_item_list_id && !selectedRelations.checkItem.group_ids.includes(group.check_item_list_id)) {
+                selectedRelations.checkItem.group_ids.push(group.check_item_list_id);
+                updated = true;
+            }
+        }
+
+        if (updated) {
+            updateSummaryDisplays();
+            console.log("已自动通过快照填充关联的通信机和检查项列表");
+        }
+    } catch (e) { console.error("自动填充资产失败:", e); }
+}
+
+function cascadeSelect(type, groupId, checked) {
+    const d = dicts[type];
+    const rels = selectedRelations[type];
+    
+    // 1. 处理本组
+    if (checked && !rels.group_ids.includes(groupId)) rels.group_ids.push(groupId);
+    else if (!checked) {
+        const i = rels.group_ids.indexOf(groupId);
+        if (i > -1) rels.group_ids.splice(i, 1);
+    }
+    
+    // 2. 找到所有直接属于该组的项
+    Object.values(d.items).forEach(item => {
+        const gid = item.group_id || item.list_id;
+        if (gid === groupId) {
+            if (checked && !rels.ids.includes(item.id)) rels.ids.push(item.id);
+            else if (!checked) {
+                const i = rels.ids.indexOf(item.id);
+                if (i > -1) rels.ids.splice(i, 1);
+            }
+        }
     });
     
-    if (count === 0) {
-        html = '<p class="text-muted" style="text-align:center; padding: 20px;">没有找到相符的数据</p>';
-    }
-    
-    container.innerHTML = html;
-    updateMultiSelectCount();
-    
-    // 监听打钩实时的数字变化（不写死事件绑定，而是在点击时更新状态）
-    const checkboxes = container.querySelectorAll('.ms-checkbox');
-    checkboxes.forEach(cb => cb.addEventListener('change', (e) => {
-        let val = parseInt(e.target.value);
-        if (e.target.checked) {
-            if (!selectedArr.includes(val)) selectedArr.push(val);
-        } else {
-            selectedArr = selectedArr.filter(i => i !== val);
+    // 3. 找到所有下属子组并递归
+    Object.values(d.groups).forEach(g => {
+        if (g.parent_id === groupId) {
+            cascadeSelect(type, g.id, checked);
         }
-        
-        // 存回引用
-        if (currentModalTab === 'individual') {
-            selectedRelations[currentModalType].ids = selectedArr;
-        } else {
-            selectedRelations[currentModalType].group_ids = selectedArr;
-        }
-        
-        updateMultiSelectCount();
-    }));
+    });
 }
-
-function updateMultiSelectCount() {
-    let idsCount = selectedRelations[currentModalType].ids.length;
-    let grpsCount = selectedRelations[currentModalType].group_ids.length;
-    document.getElementById('multiSelectCount').innerText = `已选择: ${idsCount} 项, ${grpsCount} 组`;
-}
-
-function confirmMultiSelect() {
-    renderRelationsPills();
-    closeMultiSelectModal();
-}
-
-// ---------------------- 规则执行及进度监听 ----------------------
 
 async function executeCurrentRule() {
     if (!currentRuleId) return;
-    if (!confirm("确认马上在后台执行该规则？")) return;
-    
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}/execute`, {
-            method: 'POST',
-            headers: window.shared.getHeaders()
-        });
-        
-        if (!res.ok) throw new Error((await res.json()).detail || 'Execution Failed');
-        
-        const data = await res.json();
-        alert('规则任务已投入后台执行，Celery Task ID: ' + data.task_id);
-        
-        // 我们尝试拉取最新的CheckResult从而跟踪进度
-        setTimeout(loadCurrentMultiTasksProgress, 1000); // 1s 后探测
-    } catch (e) {
-        alert('执行启动失败: ' + e.message);
-    }
-}
-
-// 修改自原有的进度轮询机制，支持展示规则页最新的批量执行概况
-async function loadCurrentMultiTasksProgress() {
-    try {
-        // 由于 execute 的任务可能产生多条 records，界面可以调用 /api/v1/checks 并取最新记录展示
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/checks?limit=10`, { headers: window.shared.getHeaders() });
-        const list = await res.json();
-        
-        // 筛选出属于 currentRuleId 的进行任务
-        const activeTasks = list.filter(t => t.rule_id === currentRuleId && t.status === 'running');
-        
-        const progDiv = document.getElementById('ruleExecuteProgress');
-        
-        if (activeTasks.length > 0) {
-            progDiv.style.display = 'block';
-            
-            // 取一个综合进度？或者取第一条展示
-            const topTask = activeTasks[0];
-            document.getElementById('ruleProgressText').innerText = `${topTask.progress}%`;
-            document.getElementById('ruleProgressBarFill').style.width = `${topTask.progress}%`;
-            document.getElementById('ruleProgressMessage').innerText = `正在检查通信机: ${topTask.communication_id || ''}...`;
-            
-            if (!progressPollInterval) {
-                progressPollInterval = setInterval(loadCurrentMultiTasksProgress, 2000);
-            }
-        } else {
-            // 已没有运行中任务了，如果面板原来是block说明刚跑完
-            if (progDiv.style.display === 'block') {
-                clearInterval(progressPollInterval);
-                progressPollInterval = null;
-                document.getElementById('ruleProgressText').innerText = `100%`;
-                document.getElementById('ruleProgressBarFill').style.width = `100%`;
-                document.getElementById('ruleProgressBarFill').style.background = `#52c41a`;
-                document.getElementById('ruleProgressMessage').innerText = `执行完成`;
-                setTimeout(() => progDiv.style.display = 'none', 3000);
-            }
+        const response = await fetch(`${window.shared.API_BASE}/api/v1/check-rules/${currentRuleId}/execute`, { method: 'POST', headers: window.shared.getHeaders() });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || '执行请求被拒绝');
         }
-    } catch (e) {
-        console.error("加载执行进度失败", e);
-    }
+        alert('任务已派发！即将在报表中心查看');
+        
+        // 跳转到 reports tab
+        const reportTab = document.querySelector('.nav-tab[data-tab="reports"]');
+        if (reportTab) {
+            reportTab.click();
+        }
+        if (window.reports && window.reports.loadReports) {
+            window.reports.loadReports();
+        }
+    } catch (e) { alert('启动失败: ' + e.message); }
 }
 
-// 在页面加载/切换到检查Tab时被外部调用
-function initChecksTab() {
-    loadCheckRules();
+// ---------------------- 初始化 ----------------------
+
+function initChecksTab() { 
+    loadCheckRules(); 
 }
 
-// ---------------------- 保留原方法以便兼容 ----------------------
-// 原 Dashboard html 还有对 `#checks` tabular 的一些遗留代码依赖，由于已彻底替换布局，原有的 `openCheckModal`, `startCheck` 均已被重构覆盖。不过如果是从别处触发可做兜底
-function openCheckModal() { alert('该功能已迁移至左侧规则列表管理'); }
-function startCheck() { alert('请通过选中规则后点击执行'); }
-function closeCheckModal() { /**/ }
-function loadCheckResults() { /**/ }
-
-
-// 导出接口
 window.checks = {
-    initChecksTab,
-    loadCheckRules,
-    createNewRule,
-    selectRule,
-    saveCurrentRule,
-    toggleCurrentRule,
-    deleteCurrentRule,
-    executeCurrentRule,
-    openMultiSelectModal,
-    closeMultiSelectModal,
-    switchMultiSelectTab,
-    filterMultiSelect,
-    confirmMultiSelect,
-    // 其他不破坏原有报错的空防守方法
-    openCheckModal,
-    startCheck,
-    closeCheckModal,
-    loadCheckResults
+    initChecksTab, loadCheckRules, createNewRule, selectRule, saveCurrentRule, toggleCurrentRule, deleteCurrentRule, executeCurrentRule, 
+    filterRules, openAssetDrawer, closeAssetDrawer, filterAssetTree, renderAssetTree, handleTreeCheck, 
+    cancelCreateRule, handleCronTemplateChange, autoFillFromSnapshot
 };
+
+
+
+// Legacy Stubs
+function openCheckModal() { alert('该功能已迁移至规则列表'); }
+function startCheck() { alert('请选中规则后执行'); }
+function closeCheckModal() {}
+function loadCheckResults() {}
