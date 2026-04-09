@@ -352,12 +352,16 @@ class FileContentCheckExecutor(BaseCheckExecutor):
                 message=f"无法读取文件: {stderr or '未知错误'}"
             )
 
+        # 获取期望内容
+        expected_content = attrs.get("content")
+        if baseline_data is not None and "content" in baseline_data:
+            expected_content = baseline_data["content"]
+
         actual_content = stdout
         compare_mode = attrs.get("compare_mode", "full")
 
-        # 与快照基准比较
-        if compare_mode == "snapshot" and baseline_data:
-            expected_content = baseline_data.get("content")
+        # 完整比较或快照比对
+        if compare_mode in ("full", "snapshot"):
             if expected_content is None:
                 return CheckResult(
                     status="pass",
@@ -371,7 +375,7 @@ class FileContentCheckExecutor(BaseCheckExecutor):
             if actual_content == expected_content:
                 return CheckResult(
                     status="pass",
-                    message="文件内容匹配",
+                    message="文件内容完全匹配",
                     expected_value={"content": expected_content},
                     actual_value={"content": actual_content}
                 )
@@ -379,33 +383,6 @@ class FileContentCheckExecutor(BaseCheckExecutor):
                 status="fail",
                 message="文件内容不匹配",
                 expected_value={"content": expected_content},
-                actual_value={"content": actual_content[:500] + ("..." if len(actual_content) > 500 else "")}
-            )
-
-        # 完整内容比较
-        if compare_mode == "full":
-            expected = attrs.get("content")
-            if not expected:
-                return CheckResult(
-                    status="pass",
-                    message=f"文件内容长度: {len(actual_content)} 字符",
-                    actual_value={
-                        "content": actual_content,
-                        "content_length": len(actual_content)
-                    }
-                )
-
-            if actual_content == expected:
-                return CheckResult(
-                    status="pass",
-                    message="文件内容匹配",
-                    expected_value={"content": expected},
-                    actual_value={"content": actual_content}
-                )
-            return CheckResult(
-                status="fail",
-                message="文件内容不匹配",
-                expected_value={"content": expected},
                 actual_value={"content": actual_content[:500] + ("..." if len(actual_content) > 500 else "")}
             )
 
