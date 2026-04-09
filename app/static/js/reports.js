@@ -147,21 +147,25 @@ async function viewReportDetail(id) {
                             
                             // Diff Level 3 Layout
                             if (isCommFail) {
-                                let ev = typeof commWrap.expected_value === 'object' ? JSON.stringify(commWrap.expected_value, null, 2) : commWrap.expected_value;
-                                let av = typeof commWrap.actual_value === 'object' ? JSON.stringify(commWrap.actual_value, null, 2) : commWrap.actual_value;
+                                let evObj = commWrap.expected_value;
+                                let avObj = commWrap.actual_value;
+                                
+                                let evStr = evObj;
+                                if (evObj && typeof evObj === 'object') {
+                                    evStr = (typeof evObj.content === 'string') ? evObj.content : JSON.stringify(evObj, null, 2);
+                                }
+                                let avStr = avObj;
+                                if (avObj && typeof avObj === 'object') {
+                                    avStr = (typeof avObj.content === 'string') ? avObj.content : JSON.stringify(avObj, null, 2);
+                                }
+
+                                const diffHtmlContent = generateUnifiedDiff(evStr, avStr, 5);
+
                                 diffHtml = `
                                     <div class="report-level-3" style="display:none;">
-                                        <div class="diff-view">
-                                            <div class="diff-pane diff-left">
-                                                <div class="diff-title text-success">预期基准值 (Expected)</div>
-                                                <div class="diff-content">${ev || '-'}</div>
-                                            </div>
-                                            <div class="diff-pane diff-right">
-                                                <div class="diff-title text-danger">实际采集值 (Actual)</div>
-                                                <div class="diff-content">${av || '-'}</div>
-                                            </div>
-                                        </div>
-                                        ${commWrap.message ? `<div style="padding:10px;color:#ef4444;font-size:12px;background:#0f172a;border-top:1px dashed #334155;">错误原因: ${commWrap.message}</div>` : ''}
+                                        <div class="diff-title" style="margin-bottom:10px;font-size:13px;color:#cbd5e1;">智能差异对比 (上下文模式)</div>
+                                        ${diffHtmlContent}
+                                        ${commWrap.message ? `<div style="margin-top:10px;padding:10px;color:#ef4444;font-size:12px;background:#0f172a;border-left:3px solid #ef4444;">系统结论: ${commWrap.message}</div>` : ''}
                                     </div>
                                 `;
                             } else {
@@ -239,3 +243,78 @@ window.reports = {
     toggleLevel3,
     terminateReport
 };
+
+// ================= Diff Helper ================= //
+function generateUnifiedDiff(oldStr, newStr, context = 5) {
+    oldStr = String(oldStr || '');
+    newStr = String(newStr || '');
+    
+    // 如果都是未定义或者空
+    if (!oldStr && !newStr) return '<div style="color:#94a3b8;font-size:12px;">无参数值/文本。</div>';
+
+    const oldLines = oldStr.split(/\r?\n/);
+    const newLines = newStr.split(/\r?\n/);
+    
+    if (oldLines.length + newLines.length > 20000) {
+        return `<div class="diff-title text-danger" style="margin-bottom:10px;">文本过大，截断展示 (仅截取实际采集内容)：</div>
+                <div class="diff-content" style="background:#0f172a;padding:10px;color:#ef4444;word-wrap:break-word;">${escapeHtml(newStr.slice(0, 5000))}...</div>`;
+    }
+    
+    let start = 0;
+    while(start < oldLines.length && start < newLines.length && oldLines[start] === newLines[start]) {
+        start++;
+    }
+    
+    let endOld = oldLines.length - 1;
+    let endNew = newLines.length - 1;
+    while(endOld >= start && endNew >= start && oldLines[endOld] === newLines[endNew]) {
+        endOld--;
+        endNew--;
+    }
+    
+    if (start > endOld && start > endNew) {
+        return `<div style="padding:10px;font-size:13px;color:#cbd5e1;background:#0f172a;">文本完全一致，或差异主要在不可见字符的结构嵌套中。</div>`;
+    }
+    
+    const diffOld = oldLines.slice(start, endOld + 1);
+    const diffNew = newLines.slice(start, endNew + 1);
+    
+    const resultHtml = [];
+    const contextStart = Math.max(0, start - context);
+    const contextEndOld = Math.min(oldLines.length - 1, endOld + context);
+    
+    for(let i = contextStart; i < start; i++) {
+        resultHtml.push(`<div style="color: #94a3b8; padding-left:14px;">  ${escapeHtml(oldLines[i])}</div>`);
+    }
+    
+    for(let i = 0; i < diffOld.length; i++) {
+        resultHtml.push(`<div style="color: #ef4444; background: rgba(239, 68, 68, 0.1); padding-left:14px; border-left: 3px solid #ef4444;">- ${escapeHtml(diffOld[i])}</div>`);
+    }
+    
+    for(let i = 0; i < diffNew.length; i++) {
+        resultHtml.push(`<div style="color: #10b981; background: rgba(16, 185, 129, 0.1); padding-left:14px; border-left: 3px solid #10b981;">+ ${escapeHtml(diffNew[i])}</div>`);
+    }
+    
+    for(let i = endOld + 1; i <= contextEndOld; i++) {
+        resultHtml.push(`<div style="color: #94a3b8; padding-left:14px;">  ${escapeHtml(oldLines[i])}</div>`);
+    }
+    
+    if (contextStart > 0) {
+        resultHtml.unshift(`<div style="color: #64748b; padding-left:14px; font-style: italic;">... (前省略 ${contextStart} 行相同内容) ...</div>`);
+    }
+    if (contextEndOld < oldLines.length - 1) {
+        resultHtml.push(`<div style="color: #64748b; padding-left:14px; font-style: italic;">... (后省略 ${oldLines.length - 1 - contextEndOld} 行相同内容) ...</div>`);
+    }
+    
+    return `<div style="font-family: monospace; font-size: 13px; line-height: 1.5; background: #0f172a; padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre;">${resultHtml.join('\n')}</div>`;
+}
+
+function escapeHtml(unsafe) {
+    if (unsafe === undefined || unsafe === null) return '';
+    return String(unsafe)
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
