@@ -67,14 +67,31 @@ class FileSystemCheckExecutor(BaseCheckExecutor):
         target_path = check_item.get("target_path", "")
         check_type = check_attributes.get("type", "exists")
 
-        # 获取检查方法
+        # 始终尝试获取全量文件信息 (用于丰富快照数据)
+        file_info = await self.ssh_client.get_file_info(target_path)
+        md5 = await self.ssh_client.get_file_md5(target_path) if file_info else None
+        
+        full_data = {
+            "exists": file_info is not None,
+            "path": target_path
+        }
+        if file_info:
+            full_data.update(file_info)
+            if md5:
+                full_data["md5"] = md5
+
+        # 获取具体的检查方法执行逻辑 (用于判定 status)
         method_name = self.CHECK_METHODS.get(check_type)
         if method_name and hasattr(self, method_name):
-            return await getattr(self, method_name)(target_path, check_attributes, baseline_data)
+            result = await getattr(self, method_name)(target_path, check_attributes, baseline_data)
+            # 将全量数据覆盖到 actual_value 中，确保快照存根完整
+            result.actual_value = full_data
+            return result
 
         return CheckResult(
             status="error",
-            message=f"未知的文件系统检查类型: {check_type}"
+            message=f"未知的文件系统检查类型: {check_type}",
+            actual_value=full_data
         )
 
     def _get_expected(self, attrs: dict, baseline: Optional[dict], field: str, default: Any = None) -> Any:
@@ -93,18 +110,26 @@ class FileSystemCheckExecutor(BaseCheckExecutor):
                 message="文件路径不能为空"
             )
         file_info = await self.ssh_client.get_file_info(path)
-        if file_info:
+        actual_exists = file_info is not None
+        
+        expected_exists = True
+        if attrs and "exists" in attrs:
+            expected_exists = bool(attrs["exists"])
+        elif baseline and "exists" in baseline:
+            expected_exists = bool(baseline["exists"])
+
+        if actual_exists == expected_exists:
             return CheckResult(
                 status="pass",
-                message=f"文件存在: {path}",
-                expected_value={"exists": True, "path": path},
-                actual_value={"exists": True, "path": path}
+                message=f"状态匹配(期望={'存在' if expected_exists else '不存在'}): {path}",
+                expected_value={"exists": expected_exists, "path": path},
+                actual_value={"exists": actual_exists, "path": path}
             )
         return CheckResult(
             status="fail",
-            message=f"文件不存在: {path}",
-            expected_value={"exists": True, "path": path},
-            actual_value={"exists": False, "path": path}
+            message=f"状态不匹配(期望={'存在' if expected_exists else '不存在'}, 实际={'存在' if actual_exists else '不存在'}): {path}",
+            expected_value={"exists": expected_exists, "path": path},
+            actual_value={"exists": actual_exists, "path": path}
         )
 
     async def _check_permissions(self, path: str, attrs: dict, baseline: Optional[dict]) -> CheckResult:
@@ -337,7 +362,10 @@ class FileContentCheckExecutor(BaseCheckExecutor):
                 return CheckResult(
                     status="pass",
                     message=f"文件内容长度: {len(actual_content)} 字符",
-                    actual_value={"content_length": len(actual_content)}
+                    actual_value={
+                        "content": actual_content,
+                        "content_length": len(actual_content)
+                    }
                 )
 
             if actual_content == expected_content:
@@ -361,7 +389,10 @@ class FileContentCheckExecutor(BaseCheckExecutor):
                 return CheckResult(
                     status="pass",
                     message=f"文件内容长度: {len(actual_content)} 字符",
-                    actual_value={"content_length": len(actual_content)}
+                    actual_value={
+                        "content": actual_content,
+                        "content_length": len(actual_content)
+                    }
                 )
 
             if actual_content == expected:
@@ -609,36 +640,32 @@ class ProcessCheckExecutor(BaseCheckExecutor):
                 message="进程名称未指定"
             )
 
-        if check_type == "exists":
+        if check_type == "exists" or check_type == "running":
             exists = await self.ssh_client.check_process_exists(process_name)
-            if exists:
-                return CheckResult(
-                    status="pass",
-                    message=f"进程 {process_name} 存在",
-                    expected_value=True,
-                    actual_value=True
-                )
-            return CheckResult(
-                status="fail",
-                message=f"进程 {process_name} 不存在",
-                expected_value=True,
-                actual_value=False
-            )
+            
+            expected_exists = True
+            if attrs and "exists" in attrs:
+                expected_exists = bool(attrs["exists"])
+            elif baseline_data is not None:
+                if isinstance(baseline_data, bool):
+                     expected_exists = baseline_data
+                elif isinstance(baseline_data, str):
+                     expected_exists = (baseline_data == "running")
+                elif isinstance(baseline_data, dict):
+                     expected_exists = bool(baseline_data.get("exists", baseline_data.get("running", True)))
 
-        if check_type == "running":
-            exists = await self.ssh_client.check_process_exists(process_name)
-            if exists:
+            if exists == expected_exists:
                 return CheckResult(
                     status="pass",
-                    message=f"进程 {process_name} 运行中",
-                    expected_value="running",
-                    actual_value="running"
+                    message=f"进程状态匹配(期望={'运行中' if expected_exists else '未运行'}): {process_name}",
+                    expected_value={"running": expected_exists},
+                    actual_value={"running": exists}
                 )
             return CheckResult(
                 status="fail",
-                message=f"进程 {process_name} 未运行",
-                expected_value="running",
-                actual_value="not running"
+                message=f"进程状态不匹配(期望={'运行中' if expected_exists else '未运行'}, 实际={'运行中' if exists else '未运行'}): {process_name}",
+                expected_value={"running": expected_exists},
+                actual_value={"running": exists}
             )
 
         if check_type == "count":
@@ -689,19 +716,29 @@ class NetworkCheckExecutor(BaseCheckExecutor):
         if check_type == "port_listening":
             try:
                 port = int(target)
-                is_listening = await self.ssh_client.check_port_listening(port)
-                if is_listening:
+                actual_listening = await self.ssh_client.check_port_listening(port)
+                
+                expected_listening = True
+                if attrs and "listening" in attrs:
+                    expected_listening = bool(attrs["listening"])
+                elif baseline_data is not None:
+                    if isinstance(baseline_data, dict):
+                        expected_listening = bool(baseline_data.get("listening", True))
+                    else:
+                        expected_listening = bool(baseline_data)
+
+                if actual_listening == expected_listening:
                     return CheckResult(
                         status="pass",
-                        message=f"端口 {port} 正在监听",
-                        expected_value={"listening": True},
-                        actual_value={"listening": True}
+                        message=f"监听状态匹配(期望={'监听' if expected_listening else '未监听'}): {port}",
+                        expected_value={"listening": expected_listening},
+                        actual_value={"listening": actual_listening}
                     )
                 return CheckResult(
                     status="fail",
-                    message=f"端口 {port} 未监听",
-                    expected_value={"listening": True},
-                    actual_value={"listening": False}
+                    message=f"监听状态不匹配(期望={'监听' if expected_listening else '未监听'}, 实际={'监听' if actual_listening else '未监听'}): {port}",
+                    expected_value={"listening": expected_listening},
+                    actual_value={"listening": actual_listening}
                 )
             except ValueError:
                 return CheckResult(
@@ -759,19 +796,28 @@ class ServiceCheckExecutor(BaseCheckExecutor):
             )
 
         status = await self.ssh_client.get_service_status(service_name)
-
-        if status == "active":
+        
+        expected_status = "active"
+        if attrs and "status" in attrs:
+            expected_status = attrs["status"]
+        elif baseline_data is not None:
+            if isinstance(baseline_data, str):
+                expected_status = baseline_data
+            elif isinstance(baseline_data, dict):
+                expected_status = baseline_data.get("status", "active")
+        
+        if status == expected_status:
             return CheckResult(
                 status="pass",
-                message=f"服务 {service_name} 运行正常",
-                expected_value="active",
+                message=f"服务状态匹配(期望={expected_status}): {service_name}",
+                expected_value=expected_status,
                 actual_value=status
             )
         elif status:
             return CheckResult(
                 status="fail",
-                message=f"服务 {service_name} 状态: {status}",
-                expected_value="active",
+                message=f"服务状态不匹配: 期望 {expected_status}, 实际 {status}",
+                expected_value=expected_status,
                 actual_value=status
             )
         return CheckResult(

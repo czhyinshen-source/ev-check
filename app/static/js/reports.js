@@ -39,6 +39,7 @@ function renderReports(reports) {
         let statusHtml = '';
         if (r.status === 'success') statusHtml = '<span class="status-badge success" style="padding: 4px 8px;border-radius:4px;background:rgba(16,185,129,0.2);color:#10b981;font-size:12px;">✅ 成功</span>';
         else if (r.status === 'failed') statusHtml = '<span class="status-badge error" style="padding: 4px 8px;border-radius:4px;background:rgba(239,68,68,0.2);color:#ef4444;font-size:12px;">❌ 失败</span>';
+        else if (r.status === 'cancelled') statusHtml = '<span class="status-badge error" style="padding: 4px 8px;border-radius:4px;background:rgba(107,114,128,0.2);color:#9ca3af;font-size:12px;">⏹ 已终止</span>';
         else statusHtml = '<span class="status-badge warning" style="padding: 4px 8px;border-radius:4px;background:rgba(245,158,11,0.2);color:#f59e0b;font-size:12px;">🔄 运行中</span>';
         
         let triggerHtml = r.trigger_type === 'manual' ? '手动执行' : '定时计划';
