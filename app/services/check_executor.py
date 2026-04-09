@@ -337,6 +337,7 @@ class FileContentCheckExecutor(BaseCheckExecutor):
     async def check(self, check_item: dict, baseline_data: Optional[dict] = None) -> CheckResult:
         file_path = check_item.get("target_path", "")
         attrs = check_item.get("check_attributes", {}) or {}
+        content_attrs = attrs.get("content", {})
 
         if not file_path:
             return CheckResult(
@@ -353,12 +354,12 @@ class FileContentCheckExecutor(BaseCheckExecutor):
             )
 
         # 获取期望内容
-        expected_content = attrs.get("content")
+        expected_content = content_attrs.get("content")
         if baseline_data is not None and "content" in baseline_data:
             expected_content = baseline_data["content"]
 
         actual_content = stdout
-        compare_mode = attrs.get("compare_mode", "full")
+        compare_mode = content_attrs.get("compare_mode", "full")
 
         # 完整比较或快照比对
         if compare_mode in ("full", "snapshot"):
@@ -383,12 +384,12 @@ class FileContentCheckExecutor(BaseCheckExecutor):
                 status="fail",
                 message="文件内容不匹配",
                 expected_value={"content": expected_content},
-                actual_value={"content": actual_content[:500] + ("..." if len(actual_content) > 500 else "")}
+                actual_value={"content": actual_content}
             )
 
         # 部分内容比较
         if compare_mode == "partial":
-            pattern = attrs.get("pattern") or attrs.get("content")
+            pattern = content_attrs.get("pattern") or content_attrs.get("content")
             if not pattern:
                 return CheckResult(
                     status="error",
@@ -411,7 +412,7 @@ class FileContentCheckExecutor(BaseCheckExecutor):
 
         # 包含检查
         if compare_mode == "contains":
-            pattern = attrs.get("pattern") or attrs.get("content")
+            pattern = content_attrs.get("pattern") or content_attrs.get("content")
             if not pattern:
                 return CheckResult(
                     status="error",
