@@ -23,7 +23,19 @@ function renderReports(reports) {
     const tbody = document.getElementById('reportTable');
     if (!tbody) return;
     
-    tbody.innerHTML = reports.map(r => {
+    // Create a set of current report IDs
+    const currentIds = new Set(reports.map(r => r.id));
+    
+    // Remove obsolete rows
+    Array.from(tbody.children).forEach(tr => {
+        const id = parseInt(tr.dataset.id);
+        if (!currentIds.has(id)) {
+            tbody.removeChild(tr);
+        }
+    });
+    
+    // Update or insert rows
+    reports.forEach(r => {
         let statusHtml = '';
         if (r.status === 'success') statusHtml = '<span class="status-badge success" style="padding: 4px 8px;border-radius:4px;background:rgba(16,185,129,0.2);color:#10b981;font-size:12px;">✅ 成功</span>';
         else if (r.status === 'failed') statusHtml = '<span class="status-badge error" style="padding: 4px 8px;border-radius:4px;background:rgba(239,68,68,0.2);color:#ef4444;font-size:12px;">❌ 失败</span>';
@@ -41,28 +53,45 @@ function renderReports(reports) {
             durationStr = Math.round(diffMs / 1000) + '秒 (进行中)';
         }
         
-        return `
-            <tr class="report-row">
+        let progressHtml = `
+            <div style="display:flex;align-items:center;">
+                <span style="font-size:12px;color:#d1d5db;margin-right:10px;min-width:40px;">${r.completed_nodes}/${r.total_nodes}</span>
+                <div style="flex:1;background:#374151;border-radius:10px;height:6px;overflow:hidden">
+                    <div style="background:#10b981;height:100%;width:${progressPercent}%"></div>
+                </div>
+            </div>
+        `;
+        
+        let actionHtml = `
+            <button class="btn btn-primary btn-sm" onclick="window.reports.viewReportDetail(${r.id})">查看报告</button>
+            ${ r.status==='running' ? `<button class="btn btn-danger btn-sm" style="margin-left:5px" onclick="window.reports.terminateReport(${r.id})">中止</button>` : '' }
+        `;
+
+        let existingRow = document.getElementById(`report-row-${r.id}`);
+        if (existingRow) {
+            // Update only dynamic parts
+            existingRow.querySelector('.cell-progress').innerHTML = progressHtml;
+            existingRow.querySelector('.cell-status').innerHTML = statusHtml;
+            existingRow.querySelector('.cell-duration').innerHTML = durationStr;
+            existingRow.querySelector('.cell-action').innerHTML = actionHtml;
+        } else {
+            // Create new row
+            const tr = document.createElement('tr');
+            tr.id = `report-row-${r.id}`;
+            tr.dataset.id = r.id;
+            tr.className = 'report-row';
+            tr.innerHTML = `
                 <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.name}">${r.name}</td>
                 <td>${r.rule_name}</td>
                 <td><span style="font-size:12px;color:#9ca3af;background:#374151;padding:2px 6px;border-radius:4px;">${triggerHtml}</span></td>
-                <td style="min-width: 150px;">
-                    <div style="display:flex;align-items:center;">
-                        <span style="font-size:12px;color:#d1d5db;margin-right:10px;min-width:40px;">${r.completed_nodes}/${r.total_nodes}</span>
-                        <div style="flex:1;background:#374151;border-radius:10px;height:6px;overflow:hidden">
-                            <div style="background:#10b981;height:100%;width:${progressPercent}%"></div>
-                        </div>
-                    </div>
-                </td>
-                <td>${statusHtml}</td>
-                <td style="color:#9ca3af;font-size:13px;">${durationStr}</td>
-                <td>
-                    <button class="btn btn-primary btn-sm" onclick="window.reports.viewReportDetail(${r.id})">查看报告</button>
-                    ${ r.status==='running' ? `<button class="btn btn-danger btn-sm" style="margin-left:5px" onclick="window.reports.terminateReport(${r.id})">中止</button>` : '' }
-                </td>
-            </tr>
-        `;
-    }).join('');
+                <td class="cell-progress" style="min-width: 150px;">${progressHtml}</td>
+                <td class="cell-status">${statusHtml}</td>
+                <td class="cell-duration" style="color:#9ca3af;font-size:13px;">${durationStr}</td>
+                <td class="cell-action">${actionHtml}</td>
+            `;
+            tbody.appendChild(tr);
+        }
+    });
 }
 
 function searchReports() {
