@@ -58,11 +58,13 @@ class CheckExecutionService:
         self,
         rule_id: int,
         communication_id: int,
+        report_id: Optional[int] = None,
+        skip_lock_check: bool = False,
     ) -> CheckResult:
         """
         启动单机检查
         """
-        if await self.lock_manager.is_locked():
+        if not skip_lock_check and await self.lock_manager.is_locked():
             current_task_id = await self.lock_manager.get_current_task_id()
             raise CheckExecutionError(f"已有检查任务在执行中 (任务ID: {current_task_id})，请等待完成后重试")
 
@@ -75,6 +77,7 @@ class CheckExecutionService:
             raise CheckExecutionError(f"通信机不存在: {communication_id}")
 
         check_result = CheckResult(
+            report_id=report_id,
             rule_id=rule_id,
             communication_id=communication_id,
             status="pending",
@@ -85,12 +88,14 @@ class CheckExecutionService:
         await self.db.commit()
         await self.db.refresh(check_result)
 
-        lock_acquired = await self.lock_manager.acquire_lock(check_result.id)
-        if not lock_acquired:
-            check_result.status = "failed"
-            check_result.error_message = "无法获取执行锁"
-            await self.db.commit()
-            raise CheckExecutionError("无法获取执行锁，可能有其他任务正在执行")
+        if not skip_lock_check:
+            lock_acquired = await self.lock_manager.acquire_lock(check_result.id)
+            if not lock_acquired:
+                check_result.status = "failed"
+                check_result.error_message = "无法获取执行锁"
+                await self.db.commit()
+                # If we fail, ensure we don't proceed
+                raise CheckExecutionError("无法获取执行锁，可能有其他任务正在执行")
 
         return check_result
 
@@ -110,6 +115,13 @@ class CheckExecutionService:
             raise CheckExecutionError(f"检查结果不存在: {result_id}")
 
         check_result.status = "running"
+        report_id = check_result.report_id
+        if report_id:
+            from sqlalchemy import update
+            from app.models import CheckReport
+            stmt = update(CheckReport).where(CheckReport.id == report_id).values(status="running")
+            await self.db.execute(stmt)
+            
         await self.db.commit()
 
         try:
@@ -209,6 +221,10 @@ class CheckExecutionService:
 
             await self.db.commit()
             await self.db.refresh(check_result)
+            
+            if report_id:
+                await self.update_report_progress(report_id, check_result.status == "success")
+                
             return check_result
 
         except CheckExecutionError:
@@ -216,6 +232,8 @@ class CheckExecutionService:
             check_result.status = "failed"
             check_result.end_time = datetime.utcnow()
             await self.db.commit()
+            if report_id:
+                await self.update_report_progress(report_id, False)
             raise
         except Exception as e:
             await self.lock_manager.release_lock(result_id)
@@ -223,7 +241,28 @@ class CheckExecutionService:
             check_result.error_message = str(e)
             check_result.end_time = datetime.utcnow()
             await self.db.commit()
+            if report_id:
+                await self.update_report_progress(report_id, False)
             raise CheckExecutionError(f"检查执行异常: {str(e)}")
+
+    async def update_report_progress(self, report_id: int, is_success: bool):
+        """更新报表执行进度，若已完成则更新报表状态"""
+        from sqlalchemy import update, select
+        from app.models import CheckReport
+        stmt = update(CheckReport).where(CheckReport.id == report_id).values(
+            completed_nodes=CheckReport.completed_nodes + 1,
+            success_nodes=CheckReport.success_nodes + (1 if is_success else 0),
+            failed_nodes=CheckReport.failed_nodes + (0 if is_success else 1)
+        )
+        await self.db.execute(stmt)
+        await self.db.commit()
+        
+        result = await self.db.execute(select(CheckReport).where(CheckReport.id == report_id))
+        report = result.scalar_one_or_none()
+        if report and report.completed_nodes >= report.total_nodes:
+            report.status = "failed" if report.failed_nodes > 0 else "success"
+            report.end_time = datetime.utcnow()
+            await self.db.commit()
 
     async def start_batch_check(
         self,
@@ -231,10 +270,29 @@ class CheckExecutionService:
         communication_ids: List[int],
     ) -> List[CheckResult]:
         """启动批量检查"""
+        from app.models import CheckReport, CheckRule
+        
+        result = await self.db.execute(select(CheckRule).where(CheckRule.id == rule_id))
+        rule = result.scalar_one_or_none()
+        rule_name = rule.name if rule else "未知规则"
+        
+        report = CheckReport(
+            rule_id=rule_id,
+            name=f"{rule_name} - {datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
+            trigger_type="manual",
+            status="pending",
+            total_nodes=len(communication_ids),
+            start_time=datetime.utcnow()
+        )
+        self.db.add(report)
+        await self.db.flush()
+        
         results = []
+        is_first = True
         for comm_id in communication_ids:
             try:
-                result = await self.start_check(rule_id, comm_id)
+                result = await self.start_check(rule_id, comm_id, report.id, skip_lock_check=not is_first)
+                is_first = False
                 results.append(result)
             except CheckExecutionError as e:
                 print(f"启动检查失败: {e}")
@@ -391,10 +449,27 @@ class CheckExecutionService:
         return res.scalar_one_or_none()
 
     async def _create_ssh_client(self, communication: Communication) -> SSHClientWrapper:
+        # 处理密钥库引用
+        private_key = None
+        private_key_path = communication.private_key_path
+        
+        if private_key_path and private_key_path.startswith("key_"):
+            try:
+                from app.models import SSHKey
+                key_id = int(private_key_path.replace("key_", ""))
+                result = await self.db.execute(select(SSHKey).where(SSHKey.id == key_id))
+                ssh_key = result.scalar_one_or_none()
+                if ssh_key:
+                    private_key = ssh_key.private_key
+                    private_key_path = None
+            except (ValueError, Exception):
+                pass
+
         return SSHClientWrapper(
             host=communication.ip_address,
             port=communication.port or 22,
             username=communication.username or "root",
             password=communication.password,
-            private_key_path=communication.private_key_path,
+            private_key_path=private_key_path,
+            private_key=private_key,
         )

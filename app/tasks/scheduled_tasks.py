@@ -28,7 +28,9 @@ def execute_scheduled_check(self, task_id: int):
     import asyncio
     
     async def _execute():
-        async with async_session_maker() as db:
+        from app.database import create_session_maker
+        session_maker, local_engine = create_session_maker(use_null_pool=True)
+        async with session_maker() as db:
             result = await db.execute(select(ScheduledTask).where(ScheduledTask.id == task_id))
             scheduled_task = result.scalar_one_or_none()
             
@@ -44,23 +46,16 @@ def execute_scheduled_check(self, task_id: int):
             if not rule:
                 return {"status": "error", "message": "检查规则不存在"}
             
-            result = await db.execute(select(Communication))
-            communications = result.scalars().all()
+            from app.tasks.check_tasks import execute_batch_check_task
             
-            for comm in communications:
-                check_result = CheckResult(
-                    rule_id=rule.id,
-                    communication_id=comm.id,
-                    status="pending",
-                    start_time=datetime.utcnow(),
-                    progress=0,
-                )
-                db.add(check_result)
+            # 委托给 batch_check_task 去创建报告并分发 celery 任务
+            execute_batch_check_task.delay(rule.id)
             
             scheduled_task.last_run_at = datetime.utcnow()
             await db.commit()
             
-            return {"status": "success", "message": f"已为 {len(communications)} 台通信机创建检查任务"}
+        await local_engine.dispose()
+        return {"status": "success", "message": f"已触发规则 {rule.name} 的批量检查"}
     
     return asyncio.run(_execute())
 
@@ -71,7 +66,9 @@ def cleanup_old_check_results():
     import asyncio
     
     async def _cleanup():
-        async with async_session_maker() as db:
+        from app.database import create_session_maker
+        session_maker, local_engine = create_session_maker(use_null_pool=True)
+        async with session_maker() as db:
             result = await db.execute(
                 select(CheckResult)
                 .order_by(CheckResult.start_time.desc())
@@ -85,6 +82,7 @@ def cleanup_old_check_results():
                 count += 1
             
             await db.commit()
+            await local_engine.dispose()
             return {"deleted": count}
     
     return asyncio.run(_cleanup())
@@ -125,35 +123,62 @@ def remove_from_schedule(task_name: str):
 
 
 @celery_app.task
-async def check_communication_statuses():
+def check_communication_statuses():
     """检查所有通信机的连接状态（每分钟执行一次）"""
-    async with async_session_maker() as db:
-        result = await db.execute(select(Communication))
-        communications = result.scalars().all()
-        
-        for comm in communications:
-            try:
-                ssh_client = SSHClientWrapper(
-                    host=comm.ip_address,
-                    port=comm.port,
-                    username=comm.username,
-                    password=comm.password,
-                    private_key_path=comm.private_key_path,
-                )
-                
-                connected = await ssh_client.connect()
-                # 检查connection_status属性是否存在
-                if hasattr(comm, 'connection_status'):
-                    comm.connection_status = 'online' if connected else 'offline'
-                    await db.commit()
-            except Exception as e:
-                print(f"检查通信机 {comm.name} 状态时出错: {str(e)}")
-                # 检查connection_status属性是否存在
-                if hasattr(comm, 'connection_status'):
-                    comm.connection_status = 'offline'
-                    await db.commit()
-            finally:
-                await ssh_client.close()
+    import asyncio
+    
+    async def _check():
+        from app.database import create_session_maker
+        session_maker, local_engine = create_session_maker(use_null_pool=True)
+        async with session_maker() as db:
+            result = await db.execute(select(Communication))
+            communications = result.scalars().all()
+            
+            for comm in communications:
+                ssh_client = None
+                try:
+                    # 处理密钥库引用
+                    private_key = None
+                    private_key_path = comm.private_key_path
+                    
+                    if private_key_path and private_key_path.startswith("key_"):
+                        try:
+                            from app.models import SSHKey
+                            key_id = int(private_key_path.replace("key_", ""))
+                            result = await db.execute(select(SSHKey).where(SSHKey.id == key_id))
+                            ssh_key = result.scalar_one_or_none()
+                            if ssh_key:
+                                private_key = ssh_key.private_key
+                                private_key_path = None
+                        except (ValueError, Exception):
+                            pass
+
+                    ssh_client = SSHClientWrapper(
+                        host=comm.ip_address,
+                        port=comm.port,
+                        username=comm.username,
+                        password=comm.password,
+                        private_key_path=private_key_path,
+                        private_key=private_key,
+                    )
+                    
+                    connected = await ssh_client.connect()
+                    # 检查connection_status属性是否存在
+                    if hasattr(comm, 'connection_status'):
+                        comm.connection_status = 'online' if connected else 'offline'
+                        await db.commit()
+                except Exception as e:
+                    print(f"检查通信机 {comm.name} 状态时出错: {str(e)}")
+                    # 检查connection_status属性是否存在
+                    if hasattr(comm, 'connection_status'):
+                        comm.connection_status = 'offline'
+                        await db.commit()
+                finally:
+                    if ssh_client:
+                        await ssh_client.close()
+            await local_engine.dispose()
+    
+    return asyncio.run(_check())
 
 
 # 配置定时任务
