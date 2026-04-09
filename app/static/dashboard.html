@@ -41,7 +41,7 @@
             <div class="nav-tab" data-tab="check-items">检查项管理</div>
             <div class="nav-tab" data-tab="snapshots">快照管理</div>
             <div class="nav-tab" data-tab="checks">检查执行</div>
-            <div class="nav-tab" data-tab="reports">检查报表</div>
+            <div class="nav-tab" data-tab="reports">任务监控与报表中心</div>
             <div class="nav-tab" data-tab="ssh-keys">SSH 密钥</div>
         </div>
         
@@ -368,19 +368,18 @@
         </div>
     </div>
     
-    <!-- 报表多级细览抽屉 (Report Drill Down Drawer) -->
-    <div class="drawer-overlay" id="reportDrawerOverlay" onclick="window.reports.closeReportDrawer(event)">
-        <div class="drawer" id="reportDrawer">
-            <div class="drawer-header">
-                <div>
-                    <h3 id="reportDrawerTitle">执行报告详情</h3>
-                    <div id="reportDrawerSummary" style="font-size: 13px; color: #9ca3af; margin-top: 5px;"></div>
-                </div>
-                <button class="close-btn" onclick="window.reports.closeReportDrawer()">×</button>
+    <!-- 报表多级细览全屏 Overlay -->
+    <div id="reportDrawerOverlay" class="snapshot-detail-overlay">
+        <div class="snapshot-detail-header">
+            <div class="header-title-area">
+                <h2 id="reportDrawerTitle">执行报告详情</h2>
+                <div id="reportDrawerSummary" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; margin-top: 4px;"></div>
             </div>
-            <div class="drawer-content" id="reportDrawerContent" style="padding: 20px; background: #0f172a; overflow-y: auto;">
+            <button class="btn btn-default btn-sm" onclick="window.reports.closeReportDrawer()">关闭报表</button>
+        </div>
+        <div class="snapshot-detail-body" style="padding-top: 20px;">
+            <div class="report-levels-container tree-container" id="reportLevelsContainer">
                 <!-- 级联树将被渲染到这里 -->
-                <div class="report-levels-container" id="reportLevelsContainer"></div>
             </div>
         </div>
     </div>

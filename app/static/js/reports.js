@@ -160,8 +160,7 @@ async function viewReportDetail(id) {
     }
 }
 
-function closeReportDrawer(e) {
-    if (e && e.target !== document.getElementById('reportDrawerOverlay') && e.target.className !== 'close-btn') return;
+function closeReportDrawer() {
     document.getElementById('reportDrawerOverlay').classList.remove('active');
 }
 

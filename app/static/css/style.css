@@ -1823,48 +1823,7 @@ select {
 }
 
 /* 报表下钻抽屉样式 */
-.drawer-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    z-index: 2000;
-    display: none;
-    opacity: 0;
-    transition: opacity 0.3s;
-}
 
-.drawer-overlay.active {
-    display: block;
-    opacity: 1;
-}
-
-.drawer {
-    position: absolute;
-    top: 0;
-    right: -100%;
-    width: 85%;
-    max-width: 1200px;
-    height: 100vh;
-    background: #0f172a;
-    border-left: 1px solid var(--accent);
-    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
-    display: flex;
-    flex-direction: column;
-    transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.drawer-overlay.active .drawer {
-    right: 0;
-}
-
-#reportDrawer {
-    width: 100% !important;
-    max-width: none !important;
-}
 
 .report-level-1 {
     background: rgba(30, 41, 59, 0.4);
