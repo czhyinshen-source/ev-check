@@ -8,7 +8,7 @@ from fastapi.responses import FileResponse
 
 from app.config import settings
 from app.database import init_db
-from app.api import users, communications, check_items, snapshots, checks, ssh_keys, check_rules, config
+from app.api import users, communications, check_items, snapshots, checks, ssh_keys, check_rules, config, reports
 
 
 @asynccontextmanager
@@ -40,6 +40,7 @@ app.include_router(checks.router, prefix="/api/v1/checks", tags=["环境检查"]
 app.include_router(ssh_keys.router, prefix="/api/v1", tags=["SSH 密钥管理"])
 app.include_router(check_rules.router, prefix="/api/v1", tags=["检查规则管理"])
 app.include_router(config.router, prefix="/api/v1", tags=["配置管理"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["检查报表"])
 
 # 自定义静态文件处理器，添加禁用缓存头
 class NoCacheStaticFiles(StaticFiles):
