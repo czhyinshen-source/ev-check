@@ -368,6 +368,23 @@
         </div>
     </div>
     
+    <!-- 报表多级细览抽屉 (Report Drill Down Drawer) -->
+    <div class="drawer-overlay" id="reportDrawerOverlay" onclick="window.reports.closeReportDrawer(event)">
+        <div class="drawer" id="reportDrawer">
+            <div class="drawer-header">
+                <div>
+                    <h3 id="reportDrawerTitle">执行报告详情</h3>
+                    <div id="reportDrawerSummary" style="font-size: 13px; color: #9ca3af; margin-top: 5px;"></div>
+                </div>
+                <button class="close-btn" onclick="window.reports.closeReportDrawer()">×</button>
+            </div>
+            <div class="drawer-content" id="reportDrawerContent" style="padding: 20px; background: #0f172a; overflow-y: auto;">
+                <!-- 级联树将被渲染到这里 -->
+                <div class="report-levels-container" id="reportLevelsContainer"></div>
+            </div>
+        </div>
+    </div>
+    
     <!-- 添加/编辑通信机弹窗 -->
     <div class="modal" id="commModal">
         <div class="modal-content">

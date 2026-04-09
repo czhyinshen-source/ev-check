@@ -80,11 +80,114 @@ function exportReport() {
     alert('导出全局 CSV 汇总报表功能在此版本已迁移，目前推荐直接进入单份报告进行详细查看与导出。');
 }
 
+async function viewReportDetail(id) {
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/reports/${id}/details`, { headers: window.shared.getHeaders() });
+        if (!res.ok) throw new Error("获取详情失败");
+        const data = await res.json();
+        
+        document.getElementById('reportDrawerTitle').innerText = data.report_info.name;
+        document.getElementById('reportDrawerSummary').innerText = `目标: ${data.report_info.total_nodes} 台 | 成功: ${data.report_info.success_nodes} | 失败: ${data.report_info.failed_nodes} | 状态: ${data.report_info.status}`;
+        
+        const container = document.getElementById('reportLevelsContainer');
+        container.innerHTML = data.items.map(item => {
+            const hasFail = item.fail_count > 0;
+            const itemColor = hasFail ? 'text-danger' : 'text-success';
+            const bgSubtle = hasFail ? 'bg-danger-subtle' : 'bg-success-subtle';
+            
+            return `
+                <div class="report-level-1">
+                    <div class="report-item-header" onclick="window.reports.toggleLevel2(this)">
+                        <div>
+                            <strong style="color:#e2e8f0;font-size:14px;">📝 ${item.item_name}</strong>
+                            <span style="font-size:12px;color:#9ca3af;margin-left:10px;">[${item.item_path}]</span>
+                        </div>
+                        <div class="${bgSubtle} ${itemColor}">
+                            <span style="margin-right:10px">🟩 正常: ${item.pass_count}</span>
+                            <span>🟥 异常: ${item.fail_count}</span>
+                            <span style="margin-left: 10px; font-size:14px;">▾</span>
+                        </div>
+                    </div>
+                    <div class="report-level-2">
+                        ${item.communications.map(commWrap => {
+                            const comm = commWrap.communication;
+                            const isCommFail = commWrap.status !== 'pass';
+                            const commColor = isCommFail ? 'text-danger' : 'text-success';
+                            let diffHtml = '';
+                            
+                            // Diff Level 3 Layout
+                            if (isCommFail) {
+                                let ev = typeof commWrap.expected_value === 'object' ? JSON.stringify(commWrap.expected_value, null, 2) : commWrap.expected_value;
+                                let av = typeof commWrap.actual_value === 'object' ? JSON.stringify(commWrap.actual_value, null, 2) : commWrap.actual_value;
+                                diffHtml = `
+                                    <div class="report-level-3" style="display:none;">
+                                        <div class="diff-view">
+                                            <div class="diff-pane diff-left">
+                                                <div class="diff-title text-success">预期基准值 (Expected)</div>
+                                                <div class="diff-content">${ev || '-'}</div>
+                                            </div>
+                                            <div class="diff-pane diff-right">
+                                                <div class="diff-title text-danger">实际采集值 (Actual)</div>
+                                                <div class="diff-content">${av || '-'}</div>
+                                            </div>
+                                        </div>
+                                        ${commWrap.message ? `<div style="padding:10px;color:#ef4444;font-size:12px;background:#0f172a;border-top:1px dashed #334155;">错误原因: ${commWrap.message}</div>` : ''}
+                                    </div>
+                                `;
+                            } else {
+                                diffHtml = `<div class="report-level-3" style="display:none;"><div style="padding:10px;font-size:12px;color:#10b981;background:#0f172a;">一致通过 ✅</div></div>`;
+                            }
+                            
+                            return `
+                                <div class="report-comm-item">
+                                    <div class="report-comm-header" onclick="window.reports.toggleLevel3(this)">
+                                        <div style="font-size:13px;color:#cbd5e1;">🖥️ ${comm.name || comm.ip_address}</div>
+                                        <div class="${commColor}" style="font-size:12px;">${isCommFail ? '🔴 异常' : '🟢 正常'}</div>
+                                    </div>
+                                    ${diffHtml}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        document.getElementById('reportDrawerOverlay').classList.add('active');
+    } catch (e) {
+        console.error(e);
+        alert('读取详情失败!');
+    }
+}
+
+function closeReportDrawer(e) {
+    if (e && e.target !== document.getElementById('reportDrawerOverlay') && e.target.className !== 'close-btn') return;
+    document.getElementById('reportDrawerOverlay').classList.remove('active');
+}
+
+function toggleLevel2(el) {
+    const level2 = el.nextElementSibling;
+    if (level2) {
+        level2.style.display = level2.style.display === 'block' ? 'none' : 'block';
+    }
+}
+
+function toggleLevel3(el) {
+    const level3 = el.nextElementSibling;
+    if (level3) {
+        level3.style.display = level3.style.display === 'block' ? 'none' : 'block';
+    }
+}
+
 // Window attachment
 window.reports = {
     loadReports,
     searchReports,
     exportReport,
-    viewReportDetail: (id) => alert('Level 4 Drill Down Viewer Not Yet Implemented (Task 6)'),
+    viewReportDetail,
+    closeReportDrawer,
+    toggleLevel2,
+    toggleLevel3,
     terminateReport: (id) => alert('Terminate API not yet configured.')
 };
+
