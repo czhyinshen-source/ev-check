@@ -61,6 +61,11 @@ class CheckRule(Base):
         back_populates="rule",
         cascade="all, delete-orphan"
     )
+    reports: Mapped[list["CheckReport"]] = relationship(
+        "CheckReport",
+        back_populates="rule",
+        cascade="all, delete-orphan"
+    )
     scheduled_tasks: Mapped[list["ScheduledTask"]] = relationship(
         "ScheduledTask",
         back_populates="rule",
@@ -68,11 +73,46 @@ class CheckRule(Base):
     )
 
 
+class CheckReport(Base):
+    """检查结果报告 (执行批次)"""
+    __tablename__ = "check_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    rule_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("check_rules.id", ondelete="SET NULL"),
+        nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    trigger_type: Mapped[str] = mapped_column(String(20), default="manual")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    total_nodes: Mapped[int] = mapped_column(Integer, default=0)
+    completed_nodes: Mapped[int] = mapped_column(Integer, default=0)
+    success_nodes: Mapped[int] = mapped_column(Integer, default=0)
+    failed_nodes: Mapped[int] = mapped_column(Integer, default=0)
+    start_time: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    rule: Mapped[Optional["CheckRule"]] = relationship(
+        "CheckRule",
+        back_populates="reports"
+    )
+    results: Mapped[list["CheckResult"]] = relationship(
+        "CheckResult",
+        back_populates="report",
+        cascade="all, delete-orphan"
+    )
+
+
 class CheckResult(Base):
-    """检查结果"""
+    """单台通信机检查结果"""
     __tablename__ = "check_results"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    report_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("check_reports.id", ondelete="CASCADE"),
+        nullable=True
+    )
     rule_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("check_rules.id", ondelete="SET NULL"),
         nullable=True
@@ -88,6 +128,10 @@ class CheckResult(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
+    report: Mapped[Optional["CheckReport"]] = relationship(
+        "CheckReport",
+        back_populates="results"
+    )
     rule: Mapped[Optional["CheckRule"]] = relationship(
         "CheckRule",
         back_populates="check_results"
