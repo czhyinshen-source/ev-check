@@ -1,5 +1,8 @@
 # 检查执行器
 # 支持所有检查项类型的执行逻辑
+import os
+import uuid
+import subprocess
 from abc import ABC, abstractmethod
 from typing import Any, Optional
 from dataclasses import dataclass
@@ -345,7 +348,67 @@ class FileContentCheckExecutor(BaseCheckExecutor):
                 message="文件路径不能为空"
             )
 
-        # 读取文件内容
+        FILE_SIZE_LIMIT = 1024 * 1024  # 1MB 软上限
+        file_size = await self.ssh_client.get_file_size(file_path)
+
+        if file_size > FILE_SIZE_LIMIT:
+            local_hash_name = f"{uuid.uuid4().hex}.file"
+            local_dir = "/tmp/ev_check_runs"
+            local_dest = os.path.join(local_dir, local_hash_name)
+
+            download_ok = await self.ssh_client.download_file(file_path, local_dest)
+            if not download_ok:
+                return CheckResult(
+                    status="error",
+                    message="大文件（>1MB）下载失败"
+                )
+
+            actual_payload = {
+                "_is_large_file": True,
+                "path": local_dest,
+                "size": file_size
+            }
+
+            compare_mode = content_attrs.get("compare_mode", "full")
+            if compare_mode in ("full", "snapshot"):
+                if baseline_data and baseline_data.get("_is_large_file"):
+                    expected_path = baseline_data.get("path")
+                    if os.path.exists(expected_path):
+                        try:
+                            # 跑原生 diff
+                            diff_proc = subprocess.run(
+                                ["diff", "-u", expected_path, local_dest],
+                                capture_output=True, text=True
+                            )
+                            diff_lines = diff_proc.stdout.splitlines()
+                            if len(diff_lines) > 5000:
+                                diff_output = "\n".join(diff_lines[:5000]) + "\n... [差异行数过多，安全截取前 5000 行展示] ..."
+                            else:
+                                diff_output = diff_proc.stdout
+
+                            pass_status = "pass" if diff_proc.returncode == 0 else "fail"
+
+                            return CheckResult(
+                                status=pass_status,
+                                message="大文件内容完全匹配" if pass_status == "pass" else "大文件内容不匹配",
+                                expected_value=baseline_data,
+                                actual_value={**actual_payload, "diff_record": diff_output} if pass_status == "fail" else actual_payload
+                            )
+                        except Exception as e:
+                            return CheckResult(status="error", message=f"大文件差异生成失败: {e}")
+                    else:
+                        return CheckResult(status="error", message="大文件基准快照实存文件已丢失")
+                else:
+                    return CheckResult(
+                        status="pass",
+                        message=f"大文件初步归档，大小: {file_size} 字节",
+                        actual_value=actual_payload
+                    )
+            else:
+                return CheckResult(status="error", message="超大文件暂不支持部分(partial)或包含(contains)比对模式")
+
+
+        # 读取小文件内容 (< 1MB)
         exit_code, stdout, stderr = await self.ssh_client.execute(f"cat {file_path}")
         if exit_code != 0:
             return CheckResult(

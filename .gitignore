@@ -66,3 +66,4 @@ celerybeat.pid
 *.key
 *.crt
 secrets/
+\n# Worktrees\n.worktrees/

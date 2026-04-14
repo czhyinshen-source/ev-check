@@ -22,7 +22,9 @@ def run_build(task_id: int):
     import traceback
 
     async def _execute():
-        async with async_session_maker() as db:
+        from app.database import create_session_maker
+        session_maker, local_engine = create_session_maker(use_null_pool=True)
+        async with session_maker() as db:
             service = SnapshotBuildService(db)
             try:
                 result = await service.execute_build(task_id)
@@ -45,25 +47,10 @@ def run_build(task_id: int):
                     "task_id": task_id,
                     "message": f"构建异常: {str(e)}",
                 }
+            finally:
+                await local_engine.dispose()
 
-    # 确保在新的事件循环中运行
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            raise RuntimeError("Loop is closed")
-    except RuntimeError:
-        # 创建新的事件循环
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    try:
-        return loop.run_until_complete(_execute())
-    finally:
-        # 清理事件循环
-        try:
-            loop.close()
-        except:
-            pass
+    return asyncio.run(_execute())
 
 
 @celery_app.task(

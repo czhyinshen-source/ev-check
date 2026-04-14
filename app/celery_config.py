@@ -15,8 +15,11 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="Asia/Shanghai",
     enable_utc=True,
+    broker_connection_retry_on_startup=True,
     beat_schedule={},
 )
 
 # 导入任务模块以注册任务
 from app.tasks import snapshot_build_tasks  # noqa: E402
+from app.tasks import check_tasks  # noqa: E402
+from app.tasks import scheduled_tasks  # noqa: E402

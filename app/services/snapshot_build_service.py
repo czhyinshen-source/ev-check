@@ -363,10 +363,27 @@ class SnapshotBuildService:
         return list(result.scalars().all())
 
     async def _create_ssh_client(self, comm: Communication) -> SSHClientWrapper:
+        # 解析密钥库引用
+        private_key = None
+        private_key_path = comm.private_key_path
+        
+        if private_key_path and private_key_path.startswith("key_"):
+            try:
+                from app.models import SSHKey
+                key_id = int(private_key_path.replace("key_", ""))
+                result = await self.db.execute(select(SSHKey).where(SSHKey.id == key_id))
+                ssh_key = result.scalar_one_or_none()
+                if ssh_key:
+                    private_key = ssh_key.private_key
+                    private_key_path = None # 既然拿到了内容，就不再使用路径
+            except (ValueError, Exception):
+                pass
+
         return SSHClientWrapper(
             host=comm.ip_address,
             port=comm.port or 22,
             username=comm.username or "root",
             password=comm.password,
-            private_key_path=comm.private_key_path,
+            private_key_path=private_key_path,
+            private_key=private_key,
         )

@@ -49,10 +49,10 @@ async function loadSnapshotGroups() {
             }
             throw new Error('API请求失败');
         }
-        
+
         const groups = await res.json();
         const groupsArray = Array.isArray(groups) ? groups : [];
-        
+
         const tree = document.getElementById('snapshotGroupTree');
         tree.innerHTML = `
             <li>
@@ -73,7 +73,7 @@ async function loadSnapshotGroups() {
                 </li>
             `).join('')}
         `;
-        
+
         // 加载快照组到下拉选择框
         loadSnapshotGroupsForModal();
     } catch (e) {
@@ -104,17 +104,17 @@ async function loadSnapshotGroupsForModal() {
 // 按快照组筛选快照
 function filterBySnapshotGroup(groupId) {
     window.currentSnapshotGroupId = groupId;
-    
+
     document.querySelectorAll('#snapshotGroupTree .group-item').forEach(item => {
         item.classList.toggle('active', item.dataset.groupId == groupId);
     });
-    
+
     const activeItem = document.querySelector(`#snapshotGroupTree .group-item[data-group-id="${groupId}"]`);
     if (activeItem) {
         const groupName = activeItem.querySelector('span:not(.icon):not(.list-actions)').textContent;
         document.getElementById('currentSnapshotGroupName').textContent = groupName === '全部快照' ? '快照管理' : groupName;
     }
-    
+
     loadSnapshots();
 }
 
@@ -286,8 +286,8 @@ async function loadSnapshots() {
                     <td><span class="status-badge ${s.is_default ? 'success' : 'info'}">${s.is_default ? '是' : '否'}</span></td>
                     <td>${statusHtml}</td>
                     <td>
-                        <button class="btn btn-xs" onclick="viewSnapshotDetail(${s.id})">查看</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteSnapshot(${s.id})">删除</button>
+                        <button class="btn btn-primary btn-sm" onclick="snapshots.viewSnapshotDetail(${s.id})">查看</button>
+                        <button class="btn btn-danger btn-sm" onclick="snapshots.deleteSnapshot(${s.id})">删除</button>
                     </td>
                 </tr>
             `;
@@ -441,108 +441,196 @@ async function loadSnapshotGroupsForBuild() {
     } catch (e) { console.error(e); }
 }
 
-// 加载通信机组树形结构
+// 加载构建快照的 M:M 配置树 (检查项列表 -> 通信机组)
 async function loadCommunicationGroupsTree() {
     try {
-        // 获取通信机组树
-        const groupsRes = await fetch(`${window.shared.API_BASE}/api/v1/communications/groups`, { headers: window.shared.getHeaders() });
-        const groups = await groupsRes.json();
+        const [listsRes, groupsRes, commsRes] = await Promise.all([
+            fetch(`${window.shared.API_BASE}/api/v1/check-items/lists`, { headers: window.shared.getHeaders() }),
+            fetch(`${window.shared.API_BASE}/api/v1/communications/groups`, { headers: window.shared.getHeaders() }),
+            fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() })
+        ]);
 
-        // 获取所有通信机
-        const commsRes = await fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() });
+        const lists = await listsRes.json();
+        const groups = await groupsRes.json();
         const comms = await commsRes.json();
 
-        // 获取检查项列表
-        const listsRes = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists`, { headers: window.shared.getHeaders() });
-        const lists = await listsRes.json();
-
-        // 构建树形HTML
         const container = document.getElementById('commGroupTree');
         let html = '';
 
-        for (const group of groups) {
-            const groupComms = comms.filter(c => c.group_id === group.id);
-            html += `
-                <div class="build-group-item" data-group-id="${group.id}">
-                    <div class="group-header" onclick="toggleGroupExpand(${group.id})">
-                        <input type="checkbox" class="group-select-all" onchange="toggleGroupSelection(${group.id}, this.checked); event.stopPropagation();">
-                        <span class="group-toggle" id="toggle-${group.id}">▶</span>
-                        <span class="group-name">${group.name}</span>
-                        <span style="font-size:12px;color:#999;">(${groupComms.length}台)</span>
-                    </div>
-                    <div class="group-communications" id="group-comms-${group.id}" style="display:none;">
-                        ${groupComms.length === 0 ? '<div style="padding:12px;color:#999;text-align:center;background:#f5f5f5;border-radius:4px;">此组暂无通信机</div>' : groupComms.map(c => `
-                            <label class="comm-item">
-                                <input type="checkbox" name="buildCommIds" value="${c.id}" data-group-id="${group.id}" onchange="updateBuildSelection()">
-                                <span><strong>${c.name}</strong> <span style="color:#999;font-size:12px;">(${c.ip_address}:${c.port || 22})</span></span>
-                            </label>
-                        `).join('')}
-                        ${groupComms.length > 0 ? `
-                        <div class="check-list-selector">
-                            <label>📋 为此组选择检查项列表:</label>
-                            <select name="checkListId" data-group-id="${group.id}">
-                                ${lists.map(l => `<option value="${l.id}">${l.name}</option>`).join('')}
-                            </select>
+        if (lists.length === 0) {
+            container.innerHTML = '<div class="empty-state">请先在"检查项工作空间"创建检查项列表</div>';
+            return;
+        }
+
+        // 递归渲染组树 (纯 CSS class 驱动展开/收起)
+        function renderGroupTree(listId, parentId = null) {
+            const currentGroups = groups.filter(g => g.parent_id == parentId);
+            const ungroupedComms = parentId === null ? comms.filter(c => !c.group_id) : [];
+            
+            if (currentGroups.length === 0 && ungroupedComms.length === 0 && parentId !== null) return '';
+
+            let groupHtml = '';
+            
+            // 渲染当前层级的组
+            currentGroups.forEach(group => {
+                const groupComms = comms.filter(c => c.group_id == group.id);
+                const childrenHtml = renderGroupTree(listId, group.id);
+                const hasChildren = groupComms.length > 0 || childrenHtml.length > 0;
+                
+                groupHtml += `
+                    <div class="build-group-item" id="group-container-${listId}-${group.id}">
+                        <div class="group-header" onclick="snapshots.toggleGroupExpand(this.parentElement, event)">
+                            <input type="checkbox" class="group-checkbox" 
+                                   data-list-id="${listId}"
+                                   data-group-id="${group.id}"
+                                   onclick="event.stopPropagation()"
+                                   onchange="snapshots.toggleGroupSelection(${listId}, ${group.id}, this.checked)">
+                            <span class="group-chevron">▶</span>
+                            <span class="view-toggle">📁</span>
+                            <span class="group-name">${group.name}</span>
+                            <span class="group-count">${groupComms.length} 台</span>
                         </div>
-                        ` : ''}
+                        <div class="group-content">
+                            ${groupComms.map(c => `
+                                <label class="comm-item">
+                                    <input type="checkbox" name="comm-node" 
+                                           data-list-id="${listId}" 
+                                           data-group-id="${group.id}" 
+                                           value="${c.id}" 
+                                           onchange="snapshots.updateBuildSelection()">
+                                    <span>${c.name} <small>(${c.ip_address})</small></span>
+                                </label>
+                            `).join('')}
+                            ${childrenHtml}
+                        </div>
+                    </div>
+                `;
+            });
+
+            // 如果是顶级，也渲染那些没有分组的通信机
+            if (parentId === null && ungroupedComms.length > 0) {
+                groupHtml += `
+                    <div class="build-group-item">
+                        <div class="group-header" onclick="snapshots.toggleGroupExpand(this.parentElement, event)">
+                            <span class="group-chevron">▶</span>
+                            <span class="view-toggle">🌐</span>
+                            <span class="group-name">未分组资产</span>
+                            <span class="group-count">${ungroupedComms.length} 台</span>
+                        </div>
+                        <div class="group-content">
+                            ${ungroupedComms.map(c => `
+                                <label class="comm-item">
+                                    <input type="checkbox" name="comm-node" 
+                                           data-list-id="${listId}" 
+                                           data-group-id="null" 
+                                           value="${c.id}" 
+                                           onchange="snapshots.updateBuildSelection()">
+                                    <span>${c.name} <small>(${c.ip_address})</small></span>
+                                </label>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            return groupHtml;
+        }
+
+        lists.forEach(list => {
+            html += `
+                <div class="build-task-card" data-list-id="${list.id}">
+                    <div class="task-header" onclick="snapshots.toggleListExpand(${list.id})">
+                        <span class="task-chevron" id="list-chevron-${list.id}">▶</span>
+                        <span class="icon">📋</span>
+                        <span class="task-title">${list.name}</span>
+                        <span class="task-count" id="list-count-${list.id}">已选 0 台</span>
+                    </div>
+                    <div class="task-body" id="list-body-${list.id}" style="display:none; padding:10px 15px;">
+                        <p class="build-hint">在下方资产架构中勾选此列表拟进行采集的目标：</p>
+                        ${renderGroupTree(list.id)}
                     </div>
                 </div>
             `;
-        }
-
-        if (groups.length === 0) {
-            html = '<div style="padding:30px;color:#999;text-align:center;font-size:14px;">📭 暂无通信机组<br><span style="font-size:12px;">请先创建通信机组并添加通信机</span></div>';
-        }
+        });
 
         container.innerHTML = html;
         updateBuildSelection();
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('加载构建配置失败:', e); }
 }
 
-function toggleGroupExpand(groupId) {
-    const el = document.getElementById(`group-comms-${groupId}`);
-    const toggle = document.getElementById(`toggle-${groupId}`);
-    if (el.style.display === 'none' || el.style.display === '') {
-        el.style.display = 'block';
-        toggle.textContent = '▼';
-    } else {
-        el.style.display = 'none';
-        toggle.textContent = '▶';
-    }
+function toggleListExpand(listId) {
+    const body = document.getElementById(`list-body-${listId}`);
+    const chevron = document.getElementById(`list-chevron-${listId}`);
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? 'block' : 'none';
+    chevron.textContent = isHidden ? '▼' : '▶';
 }
 
-function toggleGroupSelection(groupId, checked) {
-    document.querySelectorAll(`input[name="buildCommIds"][data-group-id="${groupId}"]`).forEach(cb => {
-        cb.checked = checked;
-    });
+// CSS class 驱动的展开/收起 — 每个 group-item 独立控制自身 .expanded
+function toggleGroupExpand(groupElement, event) {
+    if (event) event.stopPropagation();
+    if (!groupElement) return;
+    groupElement.classList.toggle('expanded');
+}
+
+function toggleGroupSelection(listId, groupId, checked) {
+    // 递归选择当前组及其子组下的所有通信机
+    const container = document.getElementById(`group-container-${listId}-${groupId}`);
+    if (!container) return;
+
+    // 1. 选中下属所有的通信机节点
+    const comms = container.querySelectorAll('input[name="comm-node"]');
+    comms.forEach(c => c.checked = checked);
+
+    // 2. 选中下属所有的子组选择框 (视觉同步)
+    const childGroupChecks = container.querySelectorAll('.group-checkbox');
+    childGroupChecks.forEach(c => c.checked = checked);
+
     updateBuildSelection();
 }
 
 function updateBuildSelection() {
-    const checked = document.querySelectorAll('input[name="buildCommIds"]:checked');
-    const groups = new Set([...checked].map(cb => cb.dataset.groupId));
-    document.getElementById('buildSelectionCount').textContent = `已选: ${checked.length}台, ${groups.size}组`;
+    let totalComms = 0;
+    const taskCards = document.querySelectorAll('.build-task-card');
+    
+    taskCards.forEach(card => {
+        const lid = card.dataset.listId;
+        const checkedNodes = card.querySelectorAll('input[name="comm-node"]:checked');
+        const countEl = document.getElementById(`list-count-${lid}`);
+        if (countEl) countEl.textContent = `已选 ${checkedNodes.length} 台`;
+        totalComms += checkedNodes.length;
+    });
+    
+    const totalEl = document.getElementById('buildSelectionCount');
+    if (totalEl) totalEl.textContent = `总计选择: ${totalComms} 次采集任务`;
 }
 
 function getBuildConfig() {
-    const groups = {};
-
-    document.querySelectorAll('input[name="buildCommIds"]:checked').forEach(cb => {
-        const groupId = cb.dataset.groupId;
-        if (!groups[groupId]) {
-            groups[groupId] = [];
+    const config = [];
+    const taskCards = document.querySelectorAll('.build-task-card');
+    
+    taskCards.forEach(card => {
+        const listId = parseInt(card.dataset.listId);
+        const checkedNodes = Array.from(card.querySelectorAll('input[name="comm-node"]:checked')).map(cb => parseInt(cb.value));
+        
+        if (checkedNodes.length > 0) {
+            // 找到涉及的所有 group_ids
+            const groupIds = new Set(Array.from(card.querySelectorAll('input[name="comm-node"]:checked')).map(cb => parseInt(cb.dataset.groupId)));
+            
+            groupIds.forEach(gid => {
+                const groupComms = Array.from(card.querySelectorAll(`input[name="comm-node"][data-group-id="${gid}"]:checked`)).map(cb => parseInt(cb.value));
+                if (groupComms.length > 0) {
+                    config.push({
+                        check_item_list_id: listId,
+                        group_id: gid,
+                        communication_ids: groupComms
+                    });
+                }
+            });
         }
-        groups[groupId].push(parseInt(cb.value));
     });
-
-    return Object.entries(groups).map(([groupId, commIds]) => {
-        const select = document.querySelector(`select[name="checkListId"][data-group-id="${groupId}"]`);
-        return {
-            group_id: parseInt(groupId),
-            communication_ids: commIds,
-            check_item_list_id: select ? parseInt(select.value) : 1,
-        };
-    });
+    
+    return config;
 }
 
 // 开始构建
@@ -730,212 +818,144 @@ async function renderAggregatedCheckItems(instances, instanceDataMap, itemMap, c
     return html;
 }
 
-// 查看快照详情
+// 查看快照详情 (新版：科技控制台风格)
 async function viewSnapshotDetail(snapshotId) {
-    try {
-        document.getElementById('snapshotDetailModal').classList.add('active');
-        document.getElementById('snapshotInstancesList').innerHTML = '<div class="loading">加载中...</div>';
+    const overlay = document.getElementById('snapshotDetailOverlay');
+    const treeContainer = document.getElementById('snapshotDetailTree');
+    const placeholder = document.getElementById('snapshotDetailPlaceholder');
 
-        const [snapshotRes, instancesRes] = await Promise.all([
-            fetch(`${window.shared.API_BASE}/api/v1/snapshots/${snapshotId}`, { headers: window.shared.getHeaders() }),
-            fetch(`${window.shared.API_BASE}/api/v1/snapshots/instances?snapshot_id=${snapshotId}`, { headers: window.shared.getHeaders() }),
-        ]);
-
-        if (!snapshotRes.ok) throw new Error('加载快照失败');
-        const snapshot = await snapshotRes.json();
-
-        // 设置基本信息
-        document.getElementById('detailSnapshotName').textContent = snapshot.name;
-        document.getElementById('detailSnapshotMeta').textContent =
-            `创建时间: ${new Date(snapshot.snapshot_time).toLocaleString()} | ` +
-            `默认快照: ${snapshot.is_default ? '是' : '否'}` +
-            (snapshot.description ? ` | ${snapshot.description}` : '');
-
-        // 加载实例数据
-        const instances = instancesRes.ok ? await instancesRes.json() : [];
-
-        if (instances.length === 0) {
-            document.getElementById('snapshotInstancesList').innerHTML = '<div class="empty-state">暂无采集数据</div>';
-            return;
-        }
-
-        // 获取所有通信机信息用于显示名称
-        const commsRes = await fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() });
-        const comms = commsRes.ok ? await commsRes.json() : [];
-        const commMap = {};
-        comms.forEach(c => { commMap[c.id] = c; });
-
-        // 获取所有检查项列表
-        const listsRes = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists`, { headers: window.shared.getHeaders() });
-        const lists = listsRes.ok ? await listsRes.json() : [];
-        const listMap = {};
-        lists.forEach(l => { listMap[l.id] = l; });
-
-        // 获取所有检查项
-        const itemsRes = await fetch(`${window.shared.API_BASE}/api/v1/check-items`, { headers: window.shared.getHeaders() });
-        const items = itemsRes.ok ? await itemsRes.json() : [];
-        const itemMap = {};
-        items.forEach(i => { itemMap[i.id] = i; });
-
-        // 并行加载所有实例的环境数据
-        const instanceDataPromises = instances.map(async (inst) => {
-            try {
-                const res = await fetch(`${window.shared.API_BASE}/api/v1/snapshots/instances/${inst.id}`, {
-                    headers: window.shared.getHeaders(),
-                });
-                if (!res.ok) return null;
-                const data = await res.json();
-                return { instanceId: inst.id, data };
-            } catch (e) {
-                console.error(`加载实例 ${inst.id} 数据失败:`, e);
-                return null;
-            }
-        });
-
-        const instanceDataResults = await Promise.all(instanceDataPromises);
-        const instanceDataMap = {};
-        instanceDataResults.forEach(result => {
-            if (result) {
-                instanceDataMap[result.instanceId] = result.data;
-            }
-        });
-
-        // 渲染聚合的检查项表格
-        const aggregatedHtml = await renderAggregatedCheckItems(instances, instanceDataMap, itemMap, commMap);
-        document.getElementById('snapshotInstancesList').innerHTML = aggregatedHtml;
-
-    } catch (e) {
-        console.error(e);
-        document.getElementById('snapshotInstancesList').innerHTML =
-            `<div class="error-state">加载失败: ${e.message}</div>`;
-    }
-}
-
-// 加载实例的采集数据
-async function loadInstanceData(instanceId) {
-    const container = document.getElementById(`instance-data-${instanceId}`);
-    container.innerHTML = '<div class="loading">加载数据...</div>';
+    // 1. 初始化界面状态 (进入指令系统)
+    overlay.classList.add('active');
+    treeContainer.innerHTML = '';
+    placeholder.style.display = 'flex';
+    treeContainer.style.display = 'none';
 
     try {
-        const res = await fetch(`${window.shared.API_BASE}/api/v1/snapshots/instances/${instanceId}`, {
-            headers: window.shared.getHeaders(),
+        // 2. 获取数据
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/snapshots/${snapshotId}/full_details`, {
+            headers: window.shared.getHeaders()
         });
 
-        if (!res.ok) throw new Error('加载失败');
-
+        if (!res.ok) throw new Error('FETCH_ERROR_01: UNAUTHORIZED_OR_MISSING');
         const data = await res.json();
-        const envData = data.environment_data || [];
 
-        if (envData.length === 0) {
-            container.innerHTML = '<div class="empty-state">暂无数据</div>';
-            return;
-        }
+        // 3. 填充控制台汇总数据
+        document.getElementById('summSnapshotName').textContent = data.summary.snapshot_name;
+        document.getElementById('summSnapshotTime').textContent = new Date(data.summary.snapshot_time).toLocaleString();
+        document.getElementById('summHostCount').textContent = data.summary.total_instances;
+        document.getElementById('summItemCount').textContent = data.summary.total_check_items;
 
-        // 获取检查项信息用于显示名称
-        const itemsRes = await fetch(`${window.shared.API_BASE}/api/v1/check-items`, { headers: window.shared.getHeaders() });
-        const items = itemsRes.ok ? await itemsRes.json() : [];
-        const itemMap = {};
-        items.forEach(i => { itemMap[i.id] = i; });
+        // 4. 渲染层级树
+        renderSnapshotTree(data.items);
 
-        let html = '<div class="env-data-list">';
-        for (const ed of envData) {
-            const item = itemMap[ed.check_item_id] || {};
-            const value = ed.data_value || {};
-
-            // 检查是否为文件检查项
-            if (window.fileFormatter && window.fileFormatter.isFileCheckItem(item.type)) {
-                // 检查是否有错误
-                const hasError = value._error || value._status === 'error' || value._status === 'connection_failed';
-
-                if (hasError) {
-                    // 文件检查项错误处理 - 使用原有错误显示格式
-                    const errorMsg = value._error || '未知错误';
-                    const errorType = value._error_type || '';
-                    const errorHtml = `
-                        <div class="env-data-error">
-                            <div class="error-icon">⚠️</div>
-                            <div class="error-message">
-                                <strong>采集失败</strong>
-                                ${errorType ? `<span class="error-type">${errorType}</span>` : ''}
-                                <div class="error-detail">${errorMsg}</div>
-                            </div>
-                        </div>
-                    `;
-                    html += `
-                        <div class="env-data-item file-check-item-detailed has-error">
-                            <div class="check-results-detailed">
-                                ${errorHtml}
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    // 详细数据只显示结果，不显示文件路径和检查项类型
-                    const detailedResults = window.fileFormatter.formatFileCheckDataDetailed(item, value);
-
-                    html += `
-                        <div class="env-data-item file-check-item-detailed">
-                            <div class="check-results-detailed">
-                                ${detailedResults.map(result =>
-                                    `<div class="check-result-item-detailed">${result}</div>`
-                                ).join('')}
-                            </div>
-                        </div>
-                    `;
-                }
-            } else {
-                // 原有非文件检查项的逻辑
-                // 检查是否有错误
-                const hasError = value._error || value._status === 'error' || value._status === 'connection_failed';
-
-                let valueStr;
-                let errorHtml = '';
-
-                if (hasError) {
-                    const errorMsg = value._error || '未知错误';
-                    const errorType = value._error_type || '';
-                    valueStr = JSON.stringify(value, null, 2);
-                    errorHtml = `
-                        <div class="env-data-error">
-                            <div class="error-icon">⚠️</div>
-                            <div class="error-message">
-                                <strong>采集失败</strong>
-                                ${errorType ? `<span class="error-type">${errorType}</span>` : ''}
-                                <div class="error-detail">${errorMsg}</div>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    // 移除内部字段
-                    const displayValue = {...value};
-                    delete displayValue._error;
-                    delete displayValue._status;
-                    delete displayValue._error_type;
-                    valueStr = Object.keys(displayValue).length > 0 ? JSON.stringify(displayValue, null, 2) : '{}';
-                }
-
-                html += `
-                    <div class="env-data-item ${hasError ? 'has-error' : ''}">
-                        <div class="env-data-title">
-                            <strong>${item.name || `检查项#${ed.check_item_id}`}</strong>
-                            <span class="env-data-type">${item.type || '-'}</span>
-                        </div>
-                        ${errorHtml}
-                        ${!hasError ? `<pre class="env-data-value">${valueStr}</pre>` : ''}
-                    </div>
-                `;
-            }
-        }
-        html += '</div>';
-        container.innerHTML = html;
+        placeholder.style.display = 'none';
+        treeContainer.style.display = 'block';
 
     } catch (e) {
-        console.error(e);
-        container.innerHTML = `<div class="error-state">加载失败: ${e.message}</div>`;
+        console.error('加载详情失败:', e);
+        placeholder.innerHTML = `<div style="color:var(--danger); padding:20px;">❌ 加载失败: ${e.message}</div>`;
     }
 }
 
-function closeSnapshotDetailModal() {
-    document.getElementById('snapshotDetailModal').classList.remove('active');
+// 渲染层级树：检查项 > 主机 > 采集内容
+function renderSnapshotTree(items) {
+    const container = document.getElementById('snapshotDetailTree');
+
+    if (!items || items.length === 0) {
+        container.innerHTML = '<li style="text-align:center; padding:40px; color:var(--sd-text-dim);">NO_DATA_RECORDS_FOUND</li>';
+        return;
+    }
+
+    const html = items.map((item, index) => {
+        const itemIcon = getItemIcon(item.type);
+        return `
+            <li class="tree-node-item" id="item-node-${item.id}">
+                <div class="node-main-header" onclick="snapshots.toggleTreeNode(this.parentElement)">
+                    <span class="node-chevron">▶</span>
+                    <span class="node-icon-box">${itemIcon}</span>
+                    <div class="node-info">
+                        <span class="node-title">${item.name}</span>
+                        <small style="color:var(--text-muted); margin-left:10px; font-family:'JetBrains Mono';">(${item.target_path || item.type})</small>
+                    </div>
+                </div>
+                <div class="node-content-area">
+                    ${item.hosts_data.map(host => {
+                        const isFile = window.fileFormatter && window.fileFormatter.isFileCheckItem(item.type);
+                        const formattedValue = isFile 
+                            ? (window.fileFormatter.formatAllFileAttributes(host.value).join('\n') || '< 采集数据解析失败 >')
+                            : formatRawValue(host.value);
+                        
+                        return `
+                        <div class="host-section">
+                            <div class="host-header" onclick="snapshots.toggleTreeNode(this.parentElement)">
+                                <span class="node-chevron">▶</span>
+                                <span class="host-label">🖥️ ${host.hostname} <small style="color:var(--text-muted);">[${host.ip}]</small></span>
+                                <span class="host-time">${new Date(host.collected_at).toLocaleTimeString()}</span>
+                            </div>
+                            <div class="data-display-box">
+                                <pre class="data-pre">${formattedValue}</pre>
+                            </div>
+                        </div>
+                        `;
+                    }).join('')}
+                </div>
+            </li>
+        `;
+    }).join('');
+
+    container.innerHTML = html;
+}
+
+// 根据类型返回图标
+function getItemIcon(type) {
+    if (typeof type !== 'string') return '📋';
+    const lowerType = type.toLowerCase();
+    if (lowerType.includes('file')) return '📄';
+    if (lowerType.includes('process')) return '⚙️';
+    if (lowerType.includes('port')) return '🔌';
+    if (lowerType.includes('route')) return '🗺️';
+    if (lowerType.includes('content')) return '🔡';
+    return '📋';
+}
+
+// 格式化采集值，确保易读
+function formatRawValue(val) {
+    if (val === null || val === undefined || val === '') return '< 此项无采集内容 >';
+    if (typeof val === 'string') return val;
+
+    // 特殊处理错误对象 (后端注入的 _error)
+    if (typeof val === 'object' && val._error) {
+        return `<span style="color:#ef4444; font-weight:bold;">[采集异常]</span> ${val._error}`;
+    }
+
+    if (typeof val === 'object' && Object.keys(val).length === 0) return '< 采集结果为空对象 >';
+    return JSON.stringify(val, null, 2);
+}
+
+// 切换树节点展开/收起
+function toggleTreeNode(element) {
+    element.classList.toggle('expanded');
+}
+
+// 关闭详情
+function closeSnapshotDetail() {
+    document.getElementById('snapshotDetailOverlay').classList.remove('active');
+}
+
+// 过滤快照树
+// 搜索过滤检查项 (支持名称与路径)
+function filterSnapshotTree() {
+    const keyword = document.getElementById('snapshotTreeSearch').value.toLowerCase();
+    const items = document.querySelectorAll('#snapshotDetailTree .tree-node-item');
+
+    items.forEach(node => {
+        const text = node.textContent.toLowerCase(); // 包含名称和路径
+        if (text.includes(keyword)) {
+            node.style.display = 'block';
+        } else {
+            node.style.display = 'none';
+        }
+    });
 }
 
 // 导出模块
@@ -954,8 +974,13 @@ window.snapshots = {
     startSnapshotBuild,
     cancelSnapshotBuild,
     viewSnapshotDetail,
-    loadInstanceData,
-    closeSnapshotDetailModal,
+    closeSnapshotDetail,
+    toggleTreeNode,
+    filterSnapshotTree,
     startBuildPolling,
     stopBuildPolling,
+    toggleListExpand,
+    toggleGroupExpand,
+    toggleGroupSelection,
+    updateBuildSelection,
 };

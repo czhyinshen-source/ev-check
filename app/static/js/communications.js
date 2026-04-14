@@ -48,15 +48,20 @@ async function editComm(id) {
         document.getElementById('commAuthType').value = comm.auth_method || 'password';
         document.getElementById('commGroup').value = comm.group_id || '';
         document.getElementById('commDesc').value = comm.description || '';
+        
+        // 回显密码 (无论是普通认证还是部署公钥时的密码，都存放在这个字段)
+        const passwordValue = comm.password || '';
+        document.getElementById('commPassword').value = passwordValue;
+        document.getElementById('commDeployPassword').value = passwordValue;
 
-        // 如果使用密钥认证，提取SSH密钥ID
+        // 如果使用密钥认证，提取并设置 SSH 密钥 ID
         if (comm.private_key_path && comm.private_key_path.startsWith('key_')) {
             const sshKeyId = comm.private_key_path.replace('key_', '');
             document.getElementById('commPrivateKey').value = sshKeyId;
         }
 
         document.getElementById('commModalTitle').textContent = '编辑通信机';
-        toggleAuthFields();
+        toggleAuthFields(); // 必须调用，以根据认证方式显示/隐藏对应字段
         document.getElementById('commModal').classList.add('active');
     } catch (e) {
         console.error('加载通信机信息失败:', e);
@@ -91,7 +96,9 @@ async function loadSSHKeysForModal() {
 // 切换认证字段
 function toggleAuthFields() {
     const authType = document.getElementById('commAuthType').value;
+    // 密码认证显示密码框
     document.getElementById('passwordField').style.display = authType === 'password' ? 'block' : 'none';
+    // 私钥认证显示密钥选择框和部署密码框
     document.getElementById('keyField').style.display = authType === 'private_key' ? 'block' : 'none';
     document.getElementById('deployKeyField').style.display = authType === 'private_key' ? 'block' : 'none';
 }
@@ -235,9 +242,9 @@ async function loadCommunications() {
                         </span>
                     </td>
                     <td>
-                        <button class="btn btn-primary btn-sm" onclick="testConnection(${c.id})">测试</button>
-                        <button class="btn btn-primary btn-sm" onclick="editComm(${c.id})">编辑</button>
-                        <button class="btn btn-danger btn-sm" onclick="deleteComm(${c.id})">删除</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="testConnection(event, ${c.id})">测试</button>
+                        <button type="button" class="btn btn-primary btn-sm" onclick="editComm(${c.id})">编辑</button>
+                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteComm(${c.id})">删除</button>
                     </td>
                 </tr>
             `;
@@ -257,7 +264,12 @@ function searchCommunications() {
 }
 
 // 测试通信机连接
-async function testConnection(id) {
+async function testConnection(event, id) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+    }
     const { API_BASE, getHeaders } = window.shared;
     try {
         // 使用正确的 API 端点 (GET方法)
@@ -275,13 +287,14 @@ async function testConnection(id) {
         communicationStatuses[id] = result.status === 'online' ? 'online' : 'offline';
         localStorage.setItem('communicationStatuses', JSON.stringify(communicationStatuses));
 
-        // 重新加载通信机列表
-        loadCommunications();
-
-        alert(result.status === 'online' ? '✅ 连接成功！' : '❌ 连接失败');
+        // 如果 alert 还是闪现，我们尝试使用 confirm，它在某些浏览器中更“稳”一点
+        confirm(result.status === 'online' ? '✅ 连接成功！' : '❌ 连接失败');
+        
+        // 局部更新该行的状态显示
+        updateRowStatus(id, result.status);
     } catch (e) {
         console.error('测试连接失败:', e);
-        alert('❌ 测试连接失败: ' + e.message);
+        confirm('❌ 测试连接失败: ' + e.message);
     }
 }
 
@@ -836,6 +849,30 @@ window.filterByGroup = filterByGroup;
 window.loadCommunications = loadCommunications;
 window.searchCommunications = searchCommunications;
 window.testConnection = testConnection;
+
+// 局部更新行状态显示
+function updateRowStatus(id, status) {
+    const tbody = document.getElementById('commTable');
+    if (!tbody) return;
+    
+    // 找到对应行的 checkbox 以定位到整行
+    const checkbox = tbody.querySelector(`input[value="${id}"]`);
+    if (!checkbox) return;
+    
+    const row = checkbox.closest('tr');
+    if (!row) return;
+    
+    // 找到状态单元格 (第6个 td)
+    const statusCell = row.cells[5];
+    if (statusCell) {
+        statusCell.innerHTML = `
+            <span class="status-badge ${status === 'online' ? 'success' : status === 'offline' ? 'error' : 'info'}">
+                <span class="status-dot ${status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown'}"></span>
+                ${status === 'online' ? '在线' : status === 'offline' ? '离线' : '未连接'}
+            </span>
+        `;
+    }
+}
 window.deleteComm = deleteComm;
 window.openGroupModal = openGroupModal;
 window.editGroup = editGroup;

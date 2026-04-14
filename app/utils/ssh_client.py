@@ -103,9 +103,44 @@ class SSHClientWrapper:
         except Exception as e:
             return (1, "", str(e))
 
+    async def get_file_size(self, path: str) -> int:
+        """获取结构简单的远程文件大小"""
+        # Mac 用 stat -f %z, Linux 用 stat -c %s
+        command = f"stat -c %s '{path}' 2>/dev/null || stat -f %z '{path}' 2>/dev/null"
+        exit_code, stdout, stderr = await self.execute(command)
+        if exit_code == 0 and stdout.strip().isdigit():
+            return int(stdout.strip())
+        return -1
+
+    async def download_file(self, remote_path: str, local_path: str) -> bool:
+        """使用 SFTP 极速下载文件至本地"""
+        import os
+        if not self.client:
+            return False
+            
+        try:
+            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            # 使用 Paramiko 的 sftp 子系统
+            loop = asyncio.get_event_loop()
+            
+            def _sftp_get():
+                sftp = self.client.open_sftp()
+                try:
+                    sftp.get(remote_path, local_path)
+                finally:
+                    sftp.close()
+                    
+            await loop.run_in_executor(None, _sftp_get)
+            return True
+        except Exception as e:
+            import traceback
+            print(f"SFTP 下载失败: {e}")
+            traceback.print_exc()
+            return False
+
     async def get_file_info(self, path: str) -> Optional[dict]:
         """获取文件信息"""
-        command = f"stat -c '%a %U %G %s %Y' {path}"
+        command = f"stat -c '%a %U %G %s %Y' {path} 2>/dev/null || stat -f '%A %Su %Sg %z %m' {path} 2>/dev/null"
         exit_code, stdout, stderr = await self.execute(command)
 
         if exit_code != 0:
@@ -125,7 +160,7 @@ class SSHClientWrapper:
 
     async def get_file_md5(self, path: str) -> Optional[str]:
         """获取文件 MD5"""
-        command = f"md5sum {path}"
+        command = f"md5sum {path} 2>/dev/null || md5 -q {path} 2>/dev/null"
         exit_code, stdout, stderr = await self.execute(command)
 
         if exit_code != 0:

@@ -14,6 +14,8 @@ class Base(DeclarativeBase):
     pass
 
 
+from sqlalchemy.pool import NullPool
+
 engine_kwargs = {
     "echo": settings.DEBUG,
 }
@@ -27,11 +29,31 @@ if not settings.DATABASE_URL.startswith("sqlite"):
 
 engine = create_async_engine(settings.DATABASE_URL, **engine_kwargs)
 
-async_session_maker = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-)
+def create_session_maker(use_null_pool=False):
+    """创建会话工厂，可以指定是否使用空连接池（适用于后台任务）"""
+    if use_null_pool:
+        # 为后台任务创建独立的无池引擎，避免 Loop 冲突
+        local_kwargs = engine_kwargs.copy()
+        local_kwargs["poolclass"] = NullPool
+        # 移除池相关的参数，否则 NullPool 会冲突
+        local_kwargs.pop("pool_size", None)
+        local_kwargs.pop("max_overflow", None)
+        local_kwargs.pop("pool_pre_ping", None)
+        
+        local_engine = create_async_engine(settings.DATABASE_URL, **local_kwargs)
+        return async_sessionmaker(
+            local_engine,
+            class_=AsyncSession,
+            expire_on_commit=False,
+        ), local_engine
+    
+    return async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    ), engine
+
+async_session_maker, _ = create_session_maker()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

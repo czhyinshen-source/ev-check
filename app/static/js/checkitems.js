@@ -158,7 +158,19 @@ async function loadCheckItems(listId = '') {
         // 格式化检查类型用于显示
         const formatType = (type) => {
             const types = parseItemType(type);
-            return types.join(', ');
+            const typeMap = {
+                'file_exists': '文件存在',
+                'file_mtime': '修改时间',
+                'file_size': '文件大小',
+                'file_owner': '属主',
+                'file_group': '属组',
+                'file_permissions': '权限',
+                'file_md5': 'MD5校验',
+                'file_content': '内容检查',
+                'kernel_param': '内核参数',
+                'route_table': '路由表'
+            };
+            return types.map(t => typeMap[t] || t).join(', ');
         };
 
         tbody.innerHTML = checkItems.map(item => `
@@ -217,33 +229,105 @@ async function editCheckItem(id) {
         const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/${id}`, { headers: window.shared.getHeaders() });
         const item = await res.json();
         const el = (eid) => document.getElementById(eid);
+        
         if (el('checkItemId')) el('checkItemId').value = id;
         if (el('checkItemName')) el('checkItemName').value = item.name || '';
-        if (el('checkItemTarget')) el('checkItemTarget').value = item.target_path || '';
         if (el('checkItemDesc')) el('checkItemDesc').value = item.description || '';
+        
         // 设置所属列表
         if (el('checkItemListSelect')) {
             el('checkItemListSelect').value = item.list_id || '';
         }
-        // 设置检查类型复选框
-        if (item.type) {
-            console.log('原始 type:', item.type, typeof item.type);
-            const typeArray = parseItemType(item.type);
-            console.log('解析后 typeArray:', typeArray);
-            typeArray.forEach(type => {
-                // 对每个 type 单独查找并设置
-                const checkboxes = document.querySelectorAll('input[name="checkItemType"]');
-                checkboxes.forEach(cb => {
-                    if (type.includes(cb.value) || cb.value.includes(type)) {
-                        cb.checked = true;
-                    }
-                });
-            });
+
+        // 解析 type 字段
+        const types = parseItemType(item.type);
+
+        // 判断并设置检查项分类
+        let category = '';
+        if (types.includes('file_exists') || types.includes('file_mtime') || types.includes('file_size')
+            || types.includes('file_owner') || types.includes('file_group') || types.includes('file_permissions')
+            || types.includes('file_md5')) {
+            category = 'file';
+        } else if (types.includes('file_content') || types.includes('kernel_param')) {
+            category = 'content';
+        } else if (types.includes('route_table')) {
+            category = 'route';
         }
-        if (typeof toggleCheckItemFields === 'function') toggleCheckItemFields();
+        
+        if (el('checkItemCategory')) {
+            el('checkItemCategory').value = category;
+            toggleCheckItemCategory(); // 切换分类显示的字段
+        }
+
+        // 根据分类填充特定字段
+        if (category === 'file') {
+            if (el('filePath')) el('filePath').value = item.target_path || '';
+            if (el('checkFileMtime')) el('checkFileMtime').checked = types.includes('file_mtime');
+            if (item.check_attributes?.mtime) {
+                if (el('fileMtimeCompareMode')) el('fileMtimeCompareMode').value = item.check_attributes.mtime.compare_mode || 'snapshot';
+                if (el('fileMtimeStart')) el('fileMtimeStart').value = item.check_attributes.mtime.start_time || '';
+                if (el('fileMtimeEnd')) el('fileMtimeEnd').value = item.check_attributes.mtime.end_time || '';
+            }
+            if (el('checkFileSize')) el('checkFileSize').checked = types.includes('file_size');
+            if (item.check_attributes?.size) {
+                if (el('fileSizeCompareMode')) el('fileSizeCompareMode').value = item.check_attributes.size.compare_mode || 'snapshot';
+                if (el('fileSizeMin')) el('fileSizeMin').value = item.check_attributes.size.min_size || '';
+                if (el('fileSizeMax')) el('fileSizeMax').value = item.check_attributes.size.max_size || '';
+            }
+            if (el('checkFileOwner')) el('checkFileOwner').checked = types.includes('file_owner');
+            if (item.check_attributes?.owner) {
+                if (el('fileOwnerCompareMode')) el('fileOwnerCompareMode').value = item.check_attributes.owner.compare_mode || 'snapshot';
+                if (el('fileOwnerValue')) el('fileOwnerValue').value = item.check_attributes.owner.owner || '';
+            }
+            if (el('checkFileGroup')) el('checkFileGroup').checked = types.includes('file_group');
+            if (item.check_attributes?.group) {
+                if (el('fileGroupCompareMode')) el('fileGroupCompareMode').value = item.check_attributes.group.compare_mode || 'snapshot';
+                if (el('fileGroupValue')) el('fileGroupValue').value = item.check_attributes.group.group || '';
+            }
+            if (el('checkFilePermissions')) el('checkFilePermissions').checked = types.includes('file_permissions');
+            if (item.check_attributes?.permissions) {
+                if (el('filePermissionsCompareMode')) el('filePermissionsCompareMode').value = item.check_attributes.permissions.compare_mode || 'snapshot';
+                if (el('filePermissionsValue')) el('filePermissionsValue').value = item.check_attributes.permissions.permissions || '';
+            }
+            if (el('checkFileMd5')) el('checkFileMd5').checked = types.includes('file_md5');
+            if (item.check_attributes?.md5) {
+                if (el('fileMd5CompareMode')) el('fileMd5CompareMode').value = item.check_attributes.md5.compare_mode || 'snapshot';
+                if (el('fileMd5Value')) el('fileMd5Value').value = item.check_attributes.md5.md5_value || '';
+            }
+        } else if (category === 'content') {
+            if (el('contentFilePath')) el('contentFilePath').value = item.target_path || '';
+            if (types.includes('file_content')) {
+                if (el('contentFileType')) el('contentFileType').value = 'text';
+                if (item.check_attributes?.content) {
+                    if (el('textCompareMode')) el('textCompareMode').value = item.check_attributes.content.compare_mode || 'full';
+                    if (el('textContent')) el('textContent').value = item.check_attributes.content.content || '';
+                }
+            } else if (types.includes('kernel_param')) {
+                if (el('contentFileType')) el('contentFileType').value = 'kernel';
+                if (item.check_attributes?.kernel) {
+                    if (el('kernelCompareMode')) el('kernelCompareMode').value = item.check_attributes.kernel.compare_mode || 'snapshot';
+                    if (el('kernelParamValue')) el('kernelParamValue').value = item.check_attributes.kernel.param_value || '';
+                }
+            }
+        } else if (category === 'route') {
+            if (item.check_attributes?.route) {
+                if (el('routeTableMode')) el('routeTableMode').value = item.check_attributes.route.mode || 'full';
+                if (el('routeRule')) el('routeRule').value = item.check_attributes.route.route_rule || '';
+            }
+        }
+
+        // 调用同步显示切换
+        toggleCheckItemFields();
+        toggleContentCheckFields();
+        toggleTextCompareFields();
+        // toggleKernelCompareFields() 和 toggleRouteCheckFields() 在必要时也可以调用
+        
         if (el('checkItemModalTitle')) el('checkItemModalTitle').textContent = '编辑检查项';
         if (el('checkItemModal')) el('checkItemModal').classList.add('active');
-    } catch (e) { console.error(e); }
+    } catch (e) {
+        console.error('加载检查项信息失败:', e);
+        alert('获取详情失败');
+    }
 }
 
 // 删除检查项

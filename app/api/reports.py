@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,33 +10,55 @@ router = APIRouter(tags=["Reports"])
 
 @router.get("")
 async def list_reports(skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db)):
-    """获取所有执行报告（批次）列表"""
-    # Includes rule to let frontend display rule name if it diverged
+    """获取所有执行报告（批次）列表，带上底层的检查项总梳理维度的统计"""
+    # 子查询：统计每个报告的成功检查项总数
+    pass_subq = (
+        select(CheckResult.report_id, func.count(CheckResultDetail.id).label("pass_count"))
+        .join(CheckResultDetail, CheckResult.id == CheckResultDetail.result_id)
+        .where(CheckResultDetail.status == "pass")
+        .group_by(CheckResult.report_id)
+        .subquery()
+    )
+
+    # 子查询：统计每个报告的失败（非成功）检查项总数
+    fail_subq = (
+        select(CheckResult.report_id, func.count(CheckResultDetail.id).label("fail_count"))
+        .join(CheckResultDetail, CheckResult.id == CheckResultDetail.result_id)
+        .where(CheckResultDetail.status != "pass")
+        .group_by(CheckResult.report_id)
+        .subquery()
+    )
+
     result = await db.execute(
-        select(CheckReport)
+        select(CheckReport, pass_subq.c.pass_count, fail_subq.c.fail_count)
+        .outerjoin(pass_subq, CheckReport.id == pass_subq.c.report_id)
+        .outerjoin(fail_subq, CheckReport.id == fail_subq.c.report_id)
         .options(selectinload(CheckReport.rule))
         .order_by(desc(CheckReport.id))
         .offset(skip)
         .limit(limit)
     )
-    reports = result.scalars().all()
+    
+    rows = result.all()
     
     return [
         {
-            "id": r.id,
-            "rule_id": r.rule_id,
-            "rule_name": r.rule.name if r.rule else "未知规则",
-            "name": r.name,
-            "trigger_type": r.trigger_type,
-            "status": r.status,
-            "total_nodes": r.total_nodes,
-            "completed_nodes": r.completed_nodes,
-            "success_nodes": r.success_nodes,
-            "failed_nodes": r.failed_nodes,
-            "start_time": r.start_time,
-            "end_time": r.end_time,
-            "created_at": r.created_at
-        } for r in reports
+            "id": r.CheckReport.id,
+            "rule_id": r.CheckReport.rule_id,
+            "rule_name": r.CheckReport.rule.name if r.CheckReport.rule else "未知规则",
+            "name": r.CheckReport.name,
+            "trigger_type": r.CheckReport.trigger_type,
+            "status": r.CheckReport.status,
+            "total_nodes": r.CheckReport.total_nodes,
+            "completed_nodes": r.CheckReport.completed_nodes,
+            "success_nodes": r.CheckReport.success_nodes,
+            "failed_nodes": r.CheckReport.failed_nodes,
+            "success_checks": r.pass_count or 0,
+            "failed_checks": r.fail_count or 0,
+            "start_time": r.CheckReport.start_time,
+            "end_time": r.CheckReport.end_time,
+            "created_at": r.CheckReport.created_at
+        } for r in rows
     ]
 
 @router.get("/{report_id}/details")
@@ -171,4 +193,23 @@ async def cancel_report(
     await db.commit()
     
     return {"message": f"已成功强制取消，清理了 {len(stuck_tasks)} 个后台任务"}
+
+
+@router.delete("/{report_id}")
+async def delete_report(
+    report_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """永久删除指定的执行报告及所有关联记录"""
+    result = await db.execute(select(CheckReport).where(CheckReport.id == report_id))
+    report = result.scalar_one_or_none()
+    
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+        
+    await db.delete(report)
+    await db.commit()
+    
+    return {"message": "报告及关联记录已成功删除"}
+
 

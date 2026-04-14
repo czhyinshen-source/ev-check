@@ -1,6 +1,6 @@
 # 快照管理 API
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -376,6 +376,109 @@ async def get_snapshot(
     }
 
 
+@router.get("/{snapshot_id}/full_details")
+async def get_snapshot_full_details(
+    snapshot_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取快照全量详情（按检查项聚合）"""
+    # 1. 获取快照基本信息
+    result = await db.execute(
+        select(Snapshot)
+        .options(selectinload(Snapshot.group))
+        .where(Snapshot.id == snapshot_id)
+    )
+    snapshot = result.scalar_one_or_none()
+    if not snapshot:
+        raise HTTPException(status_code=404, detail="快照不存在")
+
+    # 2. 获取该快照下的所有实例及其环境数据
+    result = await db.execute(
+        select(SnapshotInstance)
+        .options(
+            selectinload(SnapshotInstance.communication),
+            selectinload(SnapshotInstance.environment_data).selectinload(EnvironmentData.check_item)
+        )
+        .where(SnapshotInstance.snapshot_id == snapshot_id)
+    )
+    instances = result.scalars().all()
+
+    # 3. 统计汇总信息
+    summary = {
+        "snapshot_name": snapshot.name,
+        "snapshot_time": snapshot.snapshot_time.isoformat(),
+        "group_name": snapshot.group.name if snapshot.group else "未知分组",
+        "total_instances": len(instances),
+        "total_check_items": 0,
+        "created_at": snapshot.created_at.isoformat()
+    }
+
+    # 4. 按检查项聚合数据
+    items_map = {}
+    unique_check_item_ids = set()
+
+    for inst in instances:
+        comm_info = {
+            "id": inst.communication.id,
+            "name": inst.communication.name,
+            "ip": inst.communication.ip_address
+        }
+        
+        for data in inst.environment_data:
+            item = data.check_item
+            if not item:
+                continue
+            
+            unique_check_item_ids.add(item.id)
+            
+            if item.id not in items_map:
+                items_map[item.id] = {
+                    "id": item.id,
+                    "name": item.name,
+                    "type": item.type,
+                    "target_path": item.target_path,
+                    "description": item.description,
+                    "hosts_data": []
+                }
+            
+            # 智能提取核心内容
+            raw_val = data.data_value
+            extracted_val = raw_val
+            
+            # 对于文件类检查项，保留完整的元数据字典不做提取
+            item_type_str = str(item.type or "").lower()
+            is_file_type = any(ft in item_type_str for ft in 
+                ['file_exists', 'file_permissions', 'file_owner', 'file_group',
+                 'file_size', 'file_mtime', 'file_md5', 'filesystem',
+                 'file_content', 'kernel_param', 'route_table'])
+            
+            if not is_file_type and isinstance(raw_val, dict):
+                # 仅对非文件类型做智能提取
+                if "content" in raw_val:
+                    extracted_val = raw_val["content"]
+                elif "data" in raw_val:
+                    extracted_val = raw_val["data"]
+                elif "output" in raw_val:
+                    extracted_val = raw_val["output"]
+                elif "value" in raw_val:
+                    extracted_val = raw_val["value"]
+            
+            items_map[item.id]["hosts_data"].append({
+                "hostname": comm_info["name"],
+                "ip": comm_info["ip"],
+                "value": extracted_val,
+                "collected_at": data.created_at.isoformat()
+            })
+
+    summary["total_check_items"] = len(unique_check_item_ids)
+
+    return {
+        "summary": summary,
+        "items": list(items_map.values())
+    }
+
+
 @router.delete("/{snapshot_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_snapshot(
     snapshot_id: int,
@@ -480,38 +583,95 @@ async def build_snapshot(
 
 async def _collect_item_data(ssh_client: SSHClientWrapper, check_item: CheckItem) -> dict:
     """收集单个检查项的数据"""
-    item_type = check_item.type
+    raw_type = check_item.type
     target_path = check_item.target_path or ""
     
-    if item_type == "filesystem":
+    # 规范化 type：可能是字符串、JSON 数组字符串或列表
+    import json
+    if isinstance(raw_type, str):
+        try:
+            parsed = json.loads(raw_type)
+            types = parsed if isinstance(parsed, list) else [parsed]
+        except (json.JSONDecodeError, TypeError):
+            types = [raw_type]
+    elif isinstance(raw_type, list):
+        types = raw_type
+    else:
+        types = [str(raw_type)]
+    
+    # 判断是否属于文件系统类检查
+    file_types = {"filesystem", "file_exists", "file_permissions", "file_owner", 
+                  "file_group", "file_size", "file_mtime", "file_md5"}
+    is_file_check = any(t in file_types for t in types)
+    
+    # 判断是否属于文件内容类检查
+    content_types = {"file_content", "kernel_param"}
+    is_content_check = any(t in content_types for t in types)
+    
+    # 判断是否属于路由表检查
+    is_route_check = "route_table" in types
+    
+    if is_file_check:
+        data = {"exists": False}
         if target_path:
             file_info = await ssh_client.get_file_info(target_path)
             if file_info:
-                return {"file_info": file_info}
-        disk_usage = await ssh_client.get_disk_usage(target_path or "/")
-        return {"disk_usage": disk_usage}
+                data.update(file_info)
+                data["exists"] = True
+                md5 = await ssh_client.get_file_md5(target_path)
+                if md5:
+                    data["md5"] = md5
+        else:
+            disk_usage = await ssh_client.get_disk_usage("/")
+            data["disk_usage"] = disk_usage
+        return data
     
-    elif item_type == "process":
+    elif is_content_check:
+        data = {"exists": False}
+        if target_path:
+            file_info = await ssh_client.get_file_info(target_path)
+            if file_info:
+                data["exists"] = True
+                data.update(file_info)
+                # 读取文件内容
+                content = await ssh_client.execute_command(f"cat {target_path}")
+                if content is not None:
+                    data["content"] = content.strip()
+                # 如果是内核参数，也读 sysctl
+                if "kernel_param" in types:
+                    param_name = target_path.replace("/proc/sys/", "").replace("/", ".")
+                    sysctl_out = await ssh_client.execute_command(f"sysctl {param_name}")
+                    if sysctl_out:
+                        data["sysctl_value"] = sysctl_out.strip()
+        return data
+    
+    elif is_route_check:
+        route_output = await ssh_client.execute_command("ip route show")
+        return {"route_table": route_output.strip() if route_output else ""}
+    
+    elif any(t == "process" for t in types):
         if target_path:
             exists = await ssh_client.check_process_exists(target_path)
             return {"process_exists": exists, "process_name": target_path}
         return {}
     
-    elif item_type == "network":
-        return {}
-    
-    elif item_type == "log":
-        if target_path:
-            return {"log_path": target_path}
-        return {}
-    
-    elif item_type == "service":
+    elif any(t == "service" for t in types):
         if target_path:
             status_result = await ssh_client.get_service_status(target_path)
             return {"service_name": target_path, "status": status_result}
         return {}
     
+    # 兜底：尝试作为文件采集
+    if target_path:
+        data = {"exists": False}
+        file_info = await ssh_client.get_file_info(target_path)
+        if file_info:
+            data.update(file_info)
+            data["exists"] = True
+        return data
+    
     return {}
+
 
 
 # ========== 快照构建 API ==========
@@ -691,3 +851,28 @@ async def cancel_snapshot_build(
         )
 
 
+@router.get("/instances")
+async def list_snapshot_instances(
+    snapshot_id: Optional[int] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """获取快照的底层实例"""
+    from app.models.snapshot import SnapshotInstance
+    query = select(SnapshotInstance)
+    if snapshot_id:
+        query = query.where(SnapshotInstance.snapshot_id == snapshot_id)
+        
+    result = await db.execute(query)
+    instances = result.scalars().all()
+    
+    return [
+        {
+            "id": inst.id,
+            "snapshot_id": inst.snapshot_id,
+            "communication_id": inst.communication_id,
+            "check_item_list_id": inst.check_item_list_id,
+            "created_at": inst.created_at.isoformat() if inst.created_at else None,
+        }
+        for inst in instances
+    ]

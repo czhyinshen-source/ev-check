@@ -19,18 +19,21 @@ class CheckTaskCallback(Task):
         print(f"检查任务 {task_id} 失败: {exc}")
 
 
-def run_check(result_id: int, rule_id: int, communication_id: int):
+def run_check(result_id: int, rule_id: int, communication_id: int, snapshot_id: int = None):
     import asyncio
     import traceback
 
     async def _execute():
-        async with async_session_maker() as db:
+        from app.database import create_session_maker
+        session_maker, local_engine = create_session_maker(use_null_pool=True)
+        async with session_maker() as db:
             service = CheckExecutionService(db)
             try:
                 result = await service.execute_check(
                     result_id=result_id,
                     rule_id=rule_id,
                     communication_id=communication_id,
+                    snapshot_id=snapshot_id,
                 )
                 return {
                     "status": "success",
@@ -56,6 +59,8 @@ def run_check(result_id: int, rule_id: int, communication_id: int):
                     "result_id": result_id,
                     "message": f"检查执行异常: {str(e)}",
                 }
+            finally:
+                await local_engine.dispose()
 
     return asyncio.run(_execute())
 
@@ -72,8 +77,9 @@ def execute_check_task(
     result_id: int,
     rule_id: int,
     communication_id: int,
+    snapshot_id: int = None,
 ):
-    return run_check(result_id, rule_id, communication_id)
+    return run_check(result_id, rule_id, communication_id, snapshot_id)
 
 
 @celery_app.task(
@@ -89,7 +95,9 @@ def execute_batch_check_task(
     import asyncio
 
     async def _execute():
-        async with async_session_maker() as db:
+        from app.database import create_session_maker
+        session_maker, local_engine = create_session_maker(use_null_pool=True)
+        async with session_maker() as db:
             service = CheckExecutionService(db)
             results = await service.execute_rule(rule_id)
 
@@ -107,6 +115,7 @@ def execute_batch_check_task(
                 "created_results": len(results),
                 "task_ids": task_ids,
             }
+        await local_engine.dispose()
 
     return asyncio.run(_execute())
 
@@ -122,12 +131,15 @@ def cancel_check_task(result_id: int):
     import asyncio
 
     async def _execute():
-        async with async_session_maker() as db:
+        from app.database import create_session_maker
+        session_maker, local_engine = create_session_maker(use_null_pool=True)
+        async with session_maker() as db:
             service = CheckExecutionService(db)
             cancelled = await service.cancel_check(result_id)
             return {
                 "status": "success" if cancelled else "not_cancelled",
                 "result_id": result_id,
             }
+        await local_engine.dispose()
 
     return asyncio.run(_execute())

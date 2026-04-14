@@ -1393,6 +1393,7 @@ select {
     display: flex;
     flex-direction: column;
     position: relative;
+    overflow-x: hidden;
     overflow-y: auto;
     height: 100%;
 }
@@ -1472,7 +1473,7 @@ select {
 .asset-drawer {
     position: absolute;
     top: 0;
-    right: -100%;
+    right: -500px;
     width: 450px;
     height: 100%;
     background: #0f172a;
@@ -1481,11 +1482,13 @@ select {
     z-index: 100;
     display: flex;
     flex-direction: column;
-    transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    visibility: hidden;
+    transition: right 0.4s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.4s;
 }
 
 .asset-drawer.active {
     right: 0;
+    visibility: visible;
 }
 
 .drawer-header {

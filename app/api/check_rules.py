@@ -165,6 +165,19 @@ async def execute_check_rule(
     if not rule.allow_manual_execution:
         raise HTTPException(status_code=400, detail="此检查规则不允许手动执行")
         
+    # 前置检查锁，避免 Celery 吞吐报错导致用户无感知
+    from app.services.check_lock import get_check_lock_manager
+    from app.services.check_service import CheckExecutionService
+    lock_manager = get_check_lock_manager()
+    if await lock_manager.is_locked():
+        task_id = await lock_manager.get_current_task_id()
+        raise HTTPException(status_code=400, detail=f"已有检查任务正在执行 (任务ID: {task_id})，请将其完成或取消后再试。如果是意外挂起，请管理员清理 Redis 锁 (ev_check:execution_lock)。")
+
+    service = CheckExecutionService(db)
+    communications = await service._get_flattened_communications(rule_id)
+    if not communications:
+        raise HTTPException(status_code=400, detail="该检查规则目前没有关联任何目标通信机，无法执行！请先编辑规则（尤其注意如果选了快照但没有成功自动填充通信机时，需要手动勾选底层通信机保存）。")
+
     from app.tasks.check_tasks import execute_batch_check_task
     task = execute_batch_check_task.delay(rule_id=rule_id)
     
@@ -172,6 +185,50 @@ async def execute_check_rule(
         "message": "已触发执行任务",
         "task_id": task.id
     }
+
+
+@router.post("/{rule_id}/cancel-execute")
+async def cancel_execute_check_rule(
+    rule_id: int, 
+    db: AsyncSession = Depends(get_db), 
+    _: User = Depends(get_current_active_user)
+):
+    """强制取消/清理当前规则所有卡在执行中的僵死任务"""
+    from app.services.check_lock import get_check_lock_manager
+    from app.models.check_result import CheckResult
+    
+    # 查找所有当前规则下处于 pending 或 running 状态的任务
+    result = await db.execute(
+        select(CheckResult)
+        .where(CheckResult.rule_id == rule_id)
+        .where(CheckResult.status.in_(["pending", "running"]))
+    )
+    stuck_tasks = result.scalars().all()
+    
+    if not stuck_tasks:
+        # 即便没有找到，也尝试释放相关锁，以防万一锁被无主任务持有
+        lock_manager = get_check_lock_manager()
+        if await lock_manager.is_locked():
+            await lock_manager.force_release_lock()
+        return {"message": "未发现卡住的任务"}
+        
+    import datetime
+    lock_manager = get_check_lock_manager()
+    
+    # 标记为已取消并释放对应的锁
+    for task in stuck_tasks:
+        task.status = "failed"
+        task.error_message = "用户手动强制取消/清理任务"
+        task.end_time = datetime.datetime.utcnow()
+        await lock_manager.release_lock(task.id)
+    
+    # 最后加上强力保障，直接删除全局锁
+    if await lock_manager.is_locked():
+        await lock_manager.force_release_lock()
+        
+    await db.commit()
+    
+    return {"message": f"已成功取消 {len(stuck_tasks)} 个僵死任务并清理锁"}
 
 
 @router.delete("/{rule_id}")

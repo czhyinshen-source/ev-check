@@ -188,7 +188,7 @@ async def list_check_results(
     query = (
         select(CheckResult)
         .options(
-            selectinload(CheckResult.rule).selectinload(CheckRule.snapshot),
+            selectinload(CheckResult.rule).selectinload(CheckRule.snapshot_links),
             selectinload(CheckResult.communication),
             selectinload(CheckResult.details),
         )
@@ -207,6 +207,19 @@ async def list_check_results(
     result = await db.execute(query)
     results = result.scalars().all()
 
+    snapshot_ids = set()
+    for r in results:
+        if r.rule and hasattr(r.rule, 'snapshot_links') and r.rule.snapshot_links:
+            for link in r.rule.snapshot_links:
+                if link.snapshot_id:
+                    snapshot_ids.add(link.snapshot_id)
+
+    snapshot_names = {}
+    if snapshot_ids:
+        snaps_result = await db.execute(select(Snapshot).where(Snapshot.id.in_(snapshot_ids)))
+        for s in snaps_result.scalars().all():
+            snapshot_names[s.id] = s.name
+
     items = []
     for r in results:
         # 计算时长
@@ -217,9 +230,11 @@ async def list_check_results(
         # 获取快照信息
         snapshot_id = None
         snapshot_name = None
-        if r.rule and r.rule.snapshot:
-            snapshot_id = r.rule.snapshot.id
-            snapshot_name = r.rule.snapshot.name
+        if r.rule and hasattr(r.rule, 'snapshot_links') and r.rule.snapshot_links:
+            first_snapshot = next((link for link in r.rule.snapshot_links if link.snapshot_id), None)
+            if first_snapshot:
+                snapshot_id = first_snapshot.snapshot_id
+                snapshot_name = snapshot_names.get(snapshot_id)
 
         # 统计摘要
         summary = CheckSummary()

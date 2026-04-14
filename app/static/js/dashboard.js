@@ -75,6 +75,11 @@ function initializeTabs() {
                 if (targetId === 'checks' && window.checks?.initChecksTab) {
                     window.checks.initChecksTab();
                 }
+
+                // 切换到 任务监控 标签页时加载报表
+                if (targetId === 'reports' && window.reports?.loadReports) {
+                    window.reports.loadReports();
+                }
             } else {
                 console.error(`❌ 未找到内容区域: ${targetId}`);
             }
@@ -104,7 +109,7 @@ function bindFormEvents() {
             const groupId = parseInt(safeVal('commGroup')) || null;
             const privateKeyEl = safeGet('commPrivateKey');
             const deployPublicKey = safeGet('deployPublicKey')?.checked || false;
-            const deployPassword = safeVal('deployPassword');
+            const deployPassword = safeVal('commDeployPassword');
 
             if (!name || !ip) {
                 alert('请填写必填字段（名称和IP地址）');
@@ -125,6 +130,8 @@ function bindFormEvents() {
             } else {
                 // 存储SSH密钥ID到 private_key_path 字段
                 commData.private_key_path = privateKeyEl?.value ? `key_${privateKeyEl.value}` : null;
+                // 同时保存部署密码到主密码字段，以便编辑时回显
+                commData.password = deployPassword;
             }
 
             try {

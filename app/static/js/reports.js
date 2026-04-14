@@ -2,11 +2,17 @@
 
 let allReports = [];
 let reportPollInterval = null;
+let reportSortOrder = 'desc'; // 'asc' or 'desc'
+
 
 async function loadReports() {
     try {
         const res = await fetch(`${window.shared.API_BASE}/api/v1/reports`, { headers: window.shared.getHeaders() });
         allReports = await res.json();
+        
+        // 应用排序
+        sortAllReports();
+        
         renderReports(allReports);
         
         // 如果有正在运行的任务，启动轮询
@@ -28,11 +34,25 @@ function renderReports(reports) {
     
     // Remove obsolete rows
     Array.from(tbody.children).forEach(tr => {
-        const id = parseInt(tr.dataset.id);
-        if (!currentIds.has(id)) {
+        // 使用 dataset.id 进行匹配，确保类型一致
+        const rowId = tr.dataset.id ? String(tr.dataset.id) : null;
+        const currentIdsStr = new Set(reports.map(r => String(r.id)));
+        
+        if (rowId && !currentIdsStr.has(rowId)) {
             tbody.removeChild(tr);
         }
     });
+
+    // 为空的特殊处理
+    if (reports.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:#9ca3af;">暂无检查任务记录</td></tr>';
+        return;
+    }
+    
+    // 如果之前是“暂无数据”行，清除它
+    if (tbody.rows.length === 1 && tbody.rows[0].cells.length === 1) {
+        tbody.innerHTML = '';
+    }
     
     // Update or insert rows
     reports.forEach(r => {
@@ -62,19 +82,31 @@ function renderReports(reports) {
                 </div>
             </div>
         `;
+
+        let summaryHtml = `
+            <div style="font-size:12px;">
+                <span style="color:#10b981;">成功 ${r.success_checks !== undefined ? r.success_checks : 0}</span>
+                <span style="color:#64748b;margin:0 4px;">/</span>
+                <span style="color:#ef4444;">失败 ${r.failed_checks !== undefined ? r.failed_checks : 0}</span>
+            </div>
+        `;
         
         let actionHtml = `
             <button class="btn btn-primary btn-sm" onclick="window.reports.viewReportDetail(${r.id})">查看报告</button>
             ${ r.status==='running' ? `<button class="btn btn-danger btn-sm" style="margin-left:5px" onclick="window.reports.terminateReport(${r.id})">中止</button>` : '' }
+            <button class="btn btn-danger btn-sm" style="margin-left:5px; background:#4b5563;" onclick="window.reports.deleteReport(${r.id})">删除</button>
         `;
 
         let existingRow = document.getElementById(`report-row-${r.id}`);
         if (existingRow) {
             // Update only dynamic parts
             existingRow.querySelector('.cell-progress').innerHTML = progressHtml;
+            existingRow.querySelector('.cell-summary').innerHTML = summaryHtml;
             existingRow.querySelector('.cell-status').innerHTML = statusHtml;
             existingRow.querySelector('.cell-duration').innerHTML = durationStr;
             existingRow.querySelector('.cell-action').innerHTML = actionHtml;
+            // 确保 DOM 顺序与数组排序顺序一致
+            tbody.appendChild(existingRow);
         } else {
             // Create new row
             const tr = document.createElement('tr');
@@ -86,6 +118,7 @@ function renderReports(reports) {
                 <td>${r.rule_name}</td>
                 <td><span style="font-size:12px;color:#9ca3af;background:#374151;padding:2px 6px;border-radius:4px;">${triggerHtml}</span></td>
                 <td class="cell-progress" style="min-width: 150px;">${progressHtml}</td>
+                <td class="cell-summary">${summaryHtml}</td>
                 <td class="cell-status">${statusHtml}</td>
                 <td class="cell-duration" style="color:#9ca3af;font-size:13px;">${durationStr}</td>
                 <td class="cell-action">${actionHtml}</td>
@@ -102,8 +135,40 @@ function searchReports() {
         String(r.name).toLowerCase().includes(keyword) ||
         String(r.rule_name).toLowerCase().includes(keyword)
     );
+    // 搜索结果也遵循当前排序
     renderReports(filtered);
 }
+
+function sortAllReports() {
+    allReports.sort((a, b) => {
+        const valA = String(a.name || "");
+        const valB = String(b.name || "");
+        return reportSortOrder === 'asc' 
+            ? valA.localeCompare(valB, 'zh') 
+            : valB.localeCompare(valA, 'zh');
+    });
+}
+
+function toggleSort() {
+    reportSortOrder = reportSortOrder === 'desc' ? 'asc' : 'desc';
+    
+    // 更新图标
+    const icon = document.getElementById('sortIcon');
+    if (icon) {
+        icon.innerText = reportSortOrder === 'asc' ? '▲' : '▼';
+    }
+    
+    sortAllReports();
+    
+    // 如果有搜索词，则重新搜索渲染
+    const keyword = document.getElementById('reportSearch') ? document.getElementById('reportSearch').value : '';
+    if (keyword) {
+        searchReports();
+    } else {
+        renderReports(allReports);
+    }
+}
+
 
 // 导出报表功能 (Stub)
 function exportReport() {
@@ -159,7 +224,12 @@ async function viewReportDetail(id) {
                                     avStr = (typeof avObj.content === 'string') ? avObj.content : JSON.stringify(avObj, null, 2);
                                 }
 
-                                const diffHtmlContent = generateUnifiedDiff(evStr, avStr, 5);
+                                let diffHtmlContent = "";
+                                if (avObj && avObj._is_large_file && avObj.diff_record) {
+                                    diffHtmlContent = `<div style="font-family: monospace; font-size: 13px; line-height: 1.5; background: #0f172a; padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre; color: #cbd5e1;">${escapeHtml(avObj.diff_record)}</div>`;
+                                } else {
+                                    diffHtmlContent = generateUnifiedDiff(evStr, avStr, 5);
+                                }
 
                                 diffHtml = `
                                     <div class="report-level-3" style="display:none;">
@@ -232,17 +302,70 @@ async function terminateReport(reportId) {
     }
 }
 
+async function deleteReport(id) {
+    if (!confirm('确定要删除这份执行报告吗？相关的详细检查记录也将被永久移除。')) return;
+    
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/reports/${id}`, {
+            method: 'DELETE',
+            headers: window.shared.getHeaders()
+        });
+        
+        if (res.ok) {
+            window.shared.showToast('报表已删除', 'success');
+            
+            // 1. 物理移除 DOM (最直接的反馈)
+            const row = document.getElementById(`report-row-${id}`);
+            if (row) {
+                row.remove();
+            }
+
+            // 2. 同步内存数据
+            allReports = allReports.filter(r => r.id !== id);
+            
+            // 3. 如果删光了，触发一次空状态渲染
+            if (allReports.length === 0) {
+                renderReports([]);
+            }
+            
+            // 4. 稍微延迟后再次从服务器拉取，确保同步
+            setTimeout(loadReports, 1000);
+        } else {
+            const data = await res.json();
+            window.shared.showToast('删除失败: ' + (data.detail || '未知错误'), 'error');
+        }
+    } catch (e) {
+        window.shared.showToast('请求失败', 'error');
+        console.error(e);
+    }
+}
+
 // Window attachment
 window.reports = {
     loadReports,
     searchReports,
+    toggleSort,
     exportReport,
+    deleteReport,
     viewReportDetail,
+
     closeReportDrawer,
     toggleLevel2,
     toggleLevel3,
     terminateReport
 };
+
+// 页面加载时自动初始化数据
+document.addEventListener('DOMContentLoaded', () => {
+    // 延迟一秒加载，确保 dashboard.js 的标签切换逻辑已就绪
+    // 或者直接在此处判断当前激活的标签
+    setTimeout(() => {
+        const activeTab = document.querySelector('.nav-tab.active');
+        if (activeTab && activeTab.dataset.tab === 'reports') {
+            loadReports();
+        }
+    }, 500);
+});
 
 // ================= Diff Helper ================= //
 function generateUnifiedDiff(oldStr, newStr, context = 5) {
