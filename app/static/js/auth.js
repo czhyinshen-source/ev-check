@@ -24,7 +24,7 @@ function initUserDisplay() {
 // 检查登录状态
 function checkLogin() {
     if (!window.token) {
-        window.location.href = '/login.html';
+        window.location.href = '/login';
         return false;
     }
     updateUserDisplay();
@@ -36,7 +36,7 @@ function logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('username');
     window.token = null;
-    window.location.href = '/login.html';
+    window.location.href = '/login';
 }
 
 // 导出模块

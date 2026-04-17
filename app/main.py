@@ -67,6 +67,12 @@ async def login():
     return FileResponse("app/static/login.html")
 
 
+@app.get("/login.html")
+async def login_html():
+    """登录页面html"""
+    return FileResponse("app/static/login.html")
+
+
 @app.get("/dashboard")
 async def dashboard():
     """控制台页面"""

@@ -43,9 +43,43 @@ window.fileFormatter = {
     // 核心格式化：收集所有可用属性 (用于快照全亮详情)
     formatAllFileAttributes: function(data) {
         if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) return [];
-        const results = [];
         
-        // 路由表特殊处理
+        const results = [];
+
+        // 1. 处理后端返回的采集异常
+        if (data._error) {
+            results.push(`❌ [采集异常] ${data._error}`);
+            return results;
+        }
+
+        // 2. 检测是否为递归采集结果 (Path -> Metadata Map 结构)
+        const keys = Object.keys(data);
+        const isRecursiveMap = keys.length > 0 && typeof data[keys[0]] === 'object' && 
+                               (data[keys[0]].permissions !== undefined || data[keys[0]].size !== undefined);
+        
+        if (isRecursiveMap) {
+            results.push(`📂 [递归目录采集] 共采集 ${keys.length} 个项:`);
+            results.push(`  ${'路径'.padEnd(40)} | ${'权限'.padEnd(15)} | ${'大小'.padEnd(10)} | ${'属主:属组'.padEnd(15)} | ${'修改时间'.padEnd(20)} | ${'MD5'}`);
+            results.push(`  ${'-'.repeat(40)}-|- ${'-'.repeat(15)} | ${'-'.repeat(10)} | ${'-'.repeat(15)} | ${'-'.repeat(20)} | ${'-'.repeat(32)}`);
+            
+            // 按路径排序并展示前 100 条
+            keys.sort().slice(0, 100).forEach(path => {
+                const meta = data[path];
+                const permStr = this.formatPermissions(meta.permissions);
+                const sizeStr = this.formatFileSize(meta.size);
+                const ownerGroup = `${meta.owner || '-'}:${meta.group || '-'}`;
+                const mtimeStr = this.formatTimestamp(meta.mtime);
+                const md5Str = meta.md5 || '-';
+                
+                results.push(`  ${path.padEnd(40)} | ${permStr.padEnd(15)} | ${sizeStr.padEnd(10)} | ${ownerGroup.padEnd(15)} | ${mtimeStr.padEnd(20)} | ${md5Str}`);
+            });
+            if (keys.length > 100) {
+                results.push(`\n  ... 还有 ${keys.length - 100} 个项未展示（数据量较大）`);
+            }
+            return results;
+        }
+        
+        // 3. 路由表特殊处理
         if (data.route_table !== undefined) {
             results.push(`🗺️ [路由表]\n${data.route_table}`);
             return results;

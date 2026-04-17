@@ -70,7 +70,11 @@ class FileSystemCheckExecutor(BaseCheckExecutor):
         target_path = check_item.get("target_path", "")
         check_type = check_attributes.get("type", "exists")
 
-        # 始终尝试获取全量文件信息 (用于丰富快照数据)
+        # 1. 处理递归逻辑
+        if check_attributes.get("is_recursive"):
+            return await self._check_recursive(target_path, check_attributes, baseline_data)
+
+        # 2. 原有的单体检查逻辑 (始终尝试获取全量文件信息用于丰富快照数据)
         file_info = await self.ssh_client.get_file_info(target_path)
         md5 = await self.ssh_client.get_file_md5(target_path) if file_info else None
         
@@ -96,6 +100,100 @@ class FileSystemCheckExecutor(BaseCheckExecutor):
             message=f"未知的文件系统检查类型: {check_type}",
             actual_value=full_data
         )
+
+    async def _check_recursive(self, path: str, attrs: dict, baseline: Optional[dict]) -> CheckResult:
+        """递归文件系统检查"""
+        exclude_patterns = attrs.get("exclude_patterns", [])
+        actual_files = await self.ssh_client.get_recursive_file_info(path, exclude_patterns)
+        
+        if not actual_files and not baseline:
+            return CheckResult(
+                status="pass",
+                message=f"目录为空或未找到匹配项: {path}",
+                actual_value={}
+            )
+
+        if not baseline:
+            # 首次采集
+            return CheckResult(
+                status="pass",
+                message=f"已成功采集递归目录信息，包含 {len(actual_files)} 个项",
+                actual_value=actual_files
+            )
+
+        # 执行比对
+        diff = self._compare_flat_lists(baseline, actual_files)
+        
+        # 判定状态
+        if diff["added"] or diff["removed"] or diff["modified"]:
+            summary = []
+            if diff["added"]: summary.append(f"新增 {len(diff['added'])} 个")
+            if diff["removed"]: summary.append(f"减少 {len(diff['removed'])} 个")
+            if diff["modified"]: summary.append(f"修改 {len(diff['modified'])} 个")
+            
+            # 将精细差异存入 actual_value，方便前端渲染
+            # 使用副本避免污染后续可能作为基准的数据
+            actual_display = actual_files.copy()
+            actual_display["_diff_details"] = diff
+            
+            return CheckResult(
+                status="fail",
+                message=f"目录内容不匹配: {', '.join(summary)}",
+                expected_value=baseline,
+                actual_value=actual_display
+            )
+
+        return CheckResult(
+            status="pass",
+            message=f"目录内容完全匹配 (共 {len(actual_files)} 个项)",
+            expected_value=baseline,
+            actual_value=actual_files
+        )
+
+    def _compare_flat_lists(self, baseline: dict, actual: dict) -> dict:
+        """对比两个扁平化的文件属性列表"""
+        # 过滤掉辅助内部字段
+        b_keys = {k for k in baseline.keys() if not k.startswith("_")}
+        a_keys = {k for k in actual.keys() if not k.startswith("_")}
+        
+        added = a_keys - b_keys
+        removed = b_keys - a_keys
+        common = b_keys & a_keys
+        
+        modified = []
+        for path in common:
+            b_attrs = baseline[path]
+            a_attrs = actual[path]
+            
+            diff_fields = []
+            # 比较关键属性：权限、大小、属主、属组
+            # 暂时不比对 mtime，因为细微的时间点差异容易引起误报（如果用户需要，可以在配置中开启）
+            for field in ["permissions", "owner", "group", "size"]:
+                b_val = str(b_attrs.get(field))
+                a_val = str(a_attrs.get(field))
+                if b_val != a_val:
+                    diff_fields.append({
+                        "field": field,
+                        "expected": b_val,
+                        "actual": a_val
+                    })
+            
+            # 检查 MD5
+            if b_attrs.get("md5") and a_attrs.get("md5") and b_attrs["md5"] != a_attrs["md5"]:
+                diff_fields.append({
+                    "field": "md5",
+                    "expected": b_attrs["md5"],
+                    "actual": a_attrs["md5"]
+                })
+            
+            if diff_fields:
+                modified.append({"path": path, "changes": diff_fields})
+                
+        return {
+            "added": sorted(list(added)),
+            "removed": sorted(list(removed)),
+            "modified": modified
+        }
 
     def _get_expected(self, attrs: dict, baseline: Optional[dict], field: str, default: Any = None) -> Any:
         """从属性或基准数据获取期望值"""
@@ -635,12 +733,22 @@ class RouteCheckExecutor(BaseCheckExecutor):
                     status="fail",
                     message=f"路由表不匹配: 缺少 {len(missing)} 条, 多出 {len(extra)} 条",
                     expected_value={"routes": expected_routes},
-                    actual_value={"routes": actual_routes}
+                    actual_value={
+                        "routes": actual_routes,
+                        "_diff_details": {
+                            "added": list(extra),
+                            "removed": list(missing)
+                        }
+                    }
                 )
             return CheckResult(
                 status="pass",
                 message=f"路由表包含 {len(actual_routes)} 条规则",
-                actual_value={"routes": actual_routes, "count": len(actual_routes)}
+                actual_value={
+                    "routes": actual_routes, 
+                    "count": len(actual_routes),
+                    "route_table": "\n".join(actual_routes)
+                }
             )
 
         # 检查指定路由规则

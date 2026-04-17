@@ -66,6 +66,16 @@ function initializeTabs() {
                 targetContent.classList.add('active');
                 console.log(`✅ 成功切换到: ${targetId}`);
 
+                // 切换到 检查项管理 标签页时加载数据
+                if (targetId === 'check-items' && window.checkitems?.loadCheckItems) {
+                    window.checkitems.loadCheckItems();
+                }
+
+                // 切换到 快照管理 标签页时加载数据
+                if (targetId === 'snapshots' && window.snapshots?.loadSnapshots) {
+                    window.snapshots.loadSnapshots();
+                }
+
                 // 切换到 SSH 密钥标签页时加载密钥列表
                 if (targetId === 'ssh-keys' && window.sshKeys?.loadSSHKeys) {
                     window.sshKeys.loadSSHKeys();
@@ -165,12 +175,14 @@ function bindFormEvents() {
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    if (response.status === 422) {
-                        alert('❌ 输入数据有误，请检查后重试');
-                    } else {
-                        alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '操作失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
                     }
+                    alert('❌ 操作失败: ' + errMsg);
                     return;
                 }
 
@@ -182,6 +194,87 @@ function bindFormEvents() {
             } catch (e) {
                 console.error(e);
                 alert('❌ 网络错误');
+            }
+        });
+    }
+
+    // Excel导入表单
+    const excelImportForm = safeGet('excelImportForm');
+    if (excelImportForm) {
+        excelImportForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const fileInput = safeGet('excelFile');
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                alert('请选择要导入的Excel文件');
+                return;
+            }
+            
+            const deployPublicKey = safeGet('deployPublicKey')?.checked || false;
+            const sshKeyId = safeVal('excelSshKey');
+            const deployPassword = safeVal('deployPassword');
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('deploy_public_key', deployPublicKey);
+            
+            if (deployPublicKey) {
+                if (!sshKeyId) {
+                    alert('请选择SSH密钥');
+                    return;
+                }
+                if (!deployPassword) {
+                    alert('请输入部署密码');
+                    return;
+                }
+                formData.append('ssh_key_id', sshKeyId);
+                formData.append('deploy_password', deployPassword);
+            }
+            
+            try {
+                const response = await fetch(`${window.shared.API_BASE}/api/v1/communications/import-excel`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '导入失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
+                    }
+                    alert('❌ 操作失败: ' + errMsg);
+                    return;
+                }
+                
+                const result = await response.json();
+                window.shared.closeModal('excelImportModal');
+                
+                let successMsg = `✅ 成功导入 ${result.imported} 台通信机\n`;
+                if (result.deployment) {
+                    if (result.deployment.success.length > 0) {
+                        successMsg += `成功部署密钥: ${result.deployment.success.join(', ')}\n`;
+                    }
+                    if (result.deployment.failed.length > 0) {
+                        successMsg += `部署失败: ${result.deployment.failed.join(', ')}`;
+                    }
+                }
+                alert(successMsg);
+                
+                if (window.communications?.loadCommunications) {
+                    window.communications.loadCommunications();
+                }
+                if (window.communications?.loadGroups) {
+                    window.communications.loadGroups();
+                }
+            } catch (e) {
+                console.error(e);
+                alert('❌ 网络错误: ' + e.message);
             }
         });
     }
@@ -221,8 +314,14 @@ function bindFormEvents() {
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '操作失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
+                    }
+                    alert('❌ 操作失败: ' + errMsg);
                     return;
                 }
 
@@ -285,12 +384,23 @@ function bindFormEvents() {
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert('❌ 生成密钥失败: ' + (error.detail || '未知错误'));
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '操作失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
+                    }
+                    alert('❌ 生成密钥失败: ' + errMsg);
                     return;
                 }
 
-                const result = await response.json();
+                let result = {};
+                try {
+                    result = await response.json();
+                } catch (e) {
+                    console.error('解析响应失败:', e);
+                }
                 window.shared.closeModal('sshKeyModal');
                 if (window.sshKeys?.loadSSHKeys) {
                     window.sshKeys.loadSSHKeys();
@@ -329,8 +439,14 @@ function bindFormEvents() {
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '操作失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
+                    }
+                    alert('❌ 操作失败: ' + errMsg);
                     return;
                 }
 
@@ -420,6 +536,18 @@ function bindFormEvents() {
                         md5_value: safeVal('fileMd5Value') || null
                     };
                 }
+
+                // 添加递归遍历属性
+                const isRecursive = safeGet('isRecursive')?.checked || false;
+                if (isRecursive) {
+                    check_attributes.is_recursive = true;
+                    const patternsText = safeVal('excludePatterns');
+                    check_attributes.exclude_patterns = patternsText ? patternsText.split('\n').map(p => p.trim()).filter(p => p) : [];
+                } else {
+                    check_attributes.is_recursive = false;
+                    check_attributes.exclude_patterns = [];
+                }
+
                 // 如果没有任何检查类型，至少添加 file_exists
                 if (types.length === 0) {
                     types.push('file_exists');
@@ -475,8 +603,14 @@ function bindFormEvents() {
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '操作失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
+                    }
+                    alert('❌ 操作失败: ' + errMsg);
                     return;
                 }
 
@@ -530,8 +664,14 @@ function bindFormEvents() {
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '操作失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
+                    }
+                    alert('❌ 操作失败: ' + errMsg);
                     return;
                 }
 
@@ -576,8 +716,14 @@ function bindFormEvents() {
                 });
 
                 if (!response.ok) {
-                    const error = await response.json();
-                    alert('❌ 操作失败: ' + (error.detail || '未知错误'));
+                    let errMsg = '未知错误';
+                    try {
+                        const error = await response.json();
+                        errMsg = error.detail || error.message || '操作失败';
+                    } catch (e) {
+                        errMsg = `服务器响应异常 (${response.status})`;
+                    }
+                    alert('❌ 操作失败: ' + errMsg);
                     return;
                 }
 
@@ -654,23 +800,22 @@ async function refreshData() {
 async function loadStats() {
     try {
         const { API_BASE } = window.shared;
-        const [commRes, itemRes, snapRes] = await Promise.all([
-            fetch(`${API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() }),
-            fetch(`${API_BASE}/api/v1/check-items`, { headers: window.shared.getHeaders() }),
-            fetch(`${API_BASE}/api/v1/snapshots`, { headers: window.shared.getHeaders() })
-        ]);
+        const res = await fetch(`${API_BASE}/api/v1/reports/summary/stats`, { 
+            headers: window.shared.getHeaders() 
+        });
+        
+        if (!res.ok) return;
+        const data = await res.json();
 
-        const comms = await commRes.json();
-        const items = await itemRes.json();
-        const snaps = await snapRes.json();
+        const totalTasksEl = safeGet('totalTasks');
+        const todaySuccessEl = safeGet('todaySuccess');
+        const todayFailedEl = safeGet('todayFailed');
+        const todayPendingEl = safeGet('todayPending');
 
-        const commCountEl = safeGet('commCount');
-        const checkItemCountEl = safeGet('checkItemCount');
-        const snapshotCountEl = safeGet('snapshotCount');
-
-        if (commCountEl) commCountEl.textContent = comms.length;
-        if (checkItemCountEl) checkItemCountEl.textContent = items.length;
-        if (snapshotCountEl) snapshotCountEl.textContent = snaps.length;
+        if (totalTasksEl) totalTasksEl.textContent = data.total_tasks || 0;
+        if (todaySuccessEl) todaySuccessEl.textContent = data.today_success || 0;
+        if (todayFailedEl) todayFailedEl.textContent = data.today_failed || 0;
+        if (todayPendingEl) todayPendingEl.textContent = data.today_pending || 0;
     } catch (e) {
         console.error('加载统计数据失败:', e);
     }

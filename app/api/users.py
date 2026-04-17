@@ -1,5 +1,6 @@
 # 用户 API
 from datetime import datetime, timedelta
+from app.utils.datetime_util import get_now
 import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -40,7 +41,7 @@ def get_password_hash(password: str) -> str:
 def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     """创建访问令牌"""
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    expire = get_now() + (expires_delta or timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
@@ -77,6 +78,13 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
     return current_user
 
 
+async def check_admin_privilege(current_user: User = Depends(get_current_active_user)) -> User:
+    """确认管理员权限"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足，仅限管理员操作")
+    return current_user
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
     """用户注册"""
@@ -88,7 +96,8 @@ async def register(user: UserCreate, db: AsyncSession = Depends(get_db)):
         username=user.username,
         password_hash=get_password_hash(user.password),
         email=user.email,
-        role=user.role,
+        is_active=False,  # 强制设置为未激活，需管理员审核
+        role="operator",  # 强制设置为操作员角色
     )
     db.add(db_user)
     await db.commit()
@@ -113,7 +122,10 @@ async def login(
         )
 
     if not user.is_active:
-        raise HTTPException(status_code=400, detail="用户未激活")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="您的账号尚未激活，请联系管理员审核激活后再登录。"
+        )
 
     access_token = create_access_token(data={"sub": user.username})
     return TokenResponse(access_token=access_token)
@@ -130,7 +142,7 @@ async def list_users(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(check_admin_privilege),
 ):
     """获取用户列表"""
     result = await db.execute(select(User).offset(skip).limit(limit))
@@ -156,7 +168,7 @@ async def update_user(
     user_id: int,
     user_update: UserUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_active_user),
+    current_user: User = Depends(check_admin_privilege),
 ):
     """更新用户"""
     result = await db.execute(select(User).where(User.id == user_id))
@@ -193,3 +205,40 @@ async def delete_user(
 
     await db.delete(user)
     await db.commit()
+
+
+@router.patch("/{user_id}/status", response_model=UserResponse)
+async def update_user_status(
+    user_id: int,
+    is_active: bool,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_admin_privilege),
+):
+    """更新用户激活状态（审批/禁用）"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    user.is_active = is_active
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+@router.post("/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: int,
+    new_password: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(check_admin_privilege),
+):
+    """管理员重置用户密码"""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    user.password_hash = get_password_hash(new_password)
+    await db.commit()
+    return {"message": f"用户 {user.username} 的密码已成功重置"}

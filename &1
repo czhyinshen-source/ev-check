@@ -1,0 +1,25 @@
+* Host localhost:8000 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0*   Trying [::1]:8000...
+* connect to ::1 port 8000 from ::1 port 61380 failed: Connection refused
+*   Trying 127.0.0.1:8000...
+* Connected to localhost (127.0.0.1) port 8000
+> GET /api/v1/snapshots?page=1&size=20 HTTP/1.1
+> Host: localhost:8000
+> User-Agent: curl/8.7.1
+> Accept: */*
+> 
+* Request completely sent off
+< HTTP/1.1 401 Unauthorized
+< date: Tue, 14 Apr 2026 08:16:21 GMT
+< server: uvicorn
+< www-authenticate: Bearer
+< content-length: 30
+< content-type: application/json
+< 
+{ [30 bytes data]
+100    30  100    30    0     0  12578      0 --:--:-- --:--:-- --:--:-- 15000
+* Connection #0 to host localhost left intact

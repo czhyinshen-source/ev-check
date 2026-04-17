@@ -16,6 +16,24 @@ class SnapshotBuildProgressTracker:
         self._redis: Optional[redis.Redis] = None
 
     async def _get_redis(self) -> Optional[redis.Redis]:
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return None
+
+        # 如果当前已经有 Redis 客户端，检查它所属的事件循环
+        if self._redis is not None:
+            # 如果绑定的循环不一致，说明进入了新的 asyncio.run() 调用
+            # 需要丢弃旧客户端并重新创建
+            bound_loop = getattr(self, '_loop', None)
+            if bound_loop != current_loop:
+                # 尝试关闭旧连接，但因为旧循环已关，这通常会静默失败或报错，我们直接置空即可
+                try:
+                    # 不要在已关闭的循环中尝试复杂的关闭逻辑
+                    self._redis = None
+                except Exception:
+                    pass
+        
         if self._redis is None:
             try:
                 self._redis = redis.from_url(
@@ -25,11 +43,13 @@ class SnapshotBuildProgressTracker:
                     socket_connect_timeout=3,  # 3秒连接超时
                     socket_timeout=3,          # 3秒操作超时
                 )
+                self._loop = current_loop
                 # 测试连接
                 await asyncio.wait_for(self._redis.ping(), timeout=3)
             except Exception as e:
                 print(f"警告: Redis 连接失败 - {e}")
                 self._redis = None
+                self._loop = None
                 return None
         return self._redis
 

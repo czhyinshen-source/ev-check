@@ -14,9 +14,14 @@ celery_app.conf.update(
     accept_content=["json"],
     result_serializer="json",
     timezone="Asia/Shanghai",
-    enable_utc=True,
+    enable_utc=False,
     broker_connection_retry_on_startup=True,
-    beat_schedule={},
+    beat_schedule={
+        "cleanup-temp-files-every-hour": {
+            "task": "app.tasks.check_tasks.cleanup_temporary_files",
+            "schedule": 3600.0,  # 每小时执行一次
+        },
+    },
 )
 
 # 导入任务模块以注册任务

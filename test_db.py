@@ -1,33 +1,20 @@
 import asyncio
-from sqlalchemy import select, func
+from sqlalchemy import text
 from app.database import async_session_maker
-from app.models import CheckReport, CheckResult, CheckResultDetail
 
-async def main():
+async def migrate():
     async with async_session_maker() as session:
-        pass_subq = (
-            select(CheckResult.report_id, func.count(CheckResultDetail.id).label("pass_count"))
-            .join(CheckResultDetail, CheckResult.id == CheckResultDetail.result_id)
-            .where(CheckResultDetail.status == "pass")
-            .group_by(CheckResult.report_id)
-            .subquery()
-        )
-        fail_subq = (
-            select(CheckResult.report_id, func.count(CheckResultDetail.id).label("fail_count"))
-            .join(CheckResultDetail, CheckResult.id == CheckResultDetail.result_id)
-            .where(CheckResultDetail.status != "pass")
-            .group_by(CheckResult.report_id)
-            .subquery()
-        )
-        stmt = (
-            select(CheckReport, pass_subq.c.pass_count, fail_subq.c.fail_count)
-            .outerjoin(pass_subq, CheckReport.id == pass_subq.c.report_id)
-            .outerjoin(fail_subq, CheckReport.id == fail_subq.c.report_id)
-            .order_by(CheckReport.id.desc())
-            .limit(5)
-        )
-        result = await session.execute(stmt)
-        for r, p, f in result:
-            print(f"Report: {r.name}, Pass: {p}, Fail: {f}")
+        try:
+            await session.execute(text("DROP TABLE check_rule_snapshots;"))
+            await session.execute(text("DROP TABLE check_rule_check_items;"))
+            await session.execute(text("DROP TABLE check_rule_communications;"))
+        except Exception as e:
+            print("Drop tables error:", e)
+        try:
+            await session.execute(text("ALTER TABLE check_rules ADD COLUMN execution_targets JSON;"))
+            await session.commit()
+            print("DB Migration Success!")
+        except Exception as e:
+            print("Add column error:", e)
 
-asyncio.run(main())
+asyncio.run(migrate())

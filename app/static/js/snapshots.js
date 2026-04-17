@@ -1,5 +1,10 @@
 // 快照管理模块
 window.currentSnapshotGroupId = window.currentSnapshotGroupId || '';
+window.snapshotPagination = {
+    page: 1,
+    size: 5,
+    q: ''
+};
 
 // 打开快照组模态框
 function openSnapshotGroupModal(id = null) {
@@ -52,41 +57,50 @@ async function loadSnapshotGroups() {
 
         const groups = await res.json();
         const groupsArray = Array.isArray(groups) ? groups : [];
+        console.log(`📦 加载快照组: 收到 ${groupsArray.length} 条数据`, groupsArray);
 
         const tree = document.getElementById('snapshotGroupTree');
+        if (!tree) {
+            console.error('❌ 找不到 snapshotGroupTree 元素');
+            return;
+        }
+
         tree.innerHTML = `
             <li>
-                <div class="group-item ${window.currentSnapshotGroupId === '' ? 'active' : ''}" data-group-id="" onclick="filterBySnapshotGroup('')">
+                <div class="group-item ${window.currentSnapshotGroupId === '' ? 'active' : ''}" data-group-id="" onclick="window.snapshots.filterBySnapshotGroup('')">
                     <span class="icon">📁</span>
                     <span>全部快照</span>
                 </div>
             </li>
             ${groupsArray.map(g => `
                 <li>
-                    <div class="group-item ${window.currentSnapshotGroupId == g.id ? 'active' : ''}" data-group-id="${g.id}" onclick="filterBySnapshotGroup(${g.id})"><span class="icon">📂</span>
+                    <div class="group-item ${window.currentSnapshotGroupId == g.id ? 'active' : ''}" data-group-id="${g.id}" onclick="window.snapshots.filterBySnapshotGroup(${g.id})"><span class="icon">📂</span>
                         <span>${g.name}</span>
                         <div class="list-actions">
-                            <button class="btn btn-xs" onclick="editSnapshotGroup(${g.id}); event.stopPropagation();">✏️</button>
-                            <button class="btn btn-xs" onclick="deleteSnapshotGroup(${g.id}); event.stopPropagation();">🗑️</button>
+                            <button class="btn btn-xs" onclick="window.snapshots.editSnapshotGroup(${g.id}); event.stopPropagation();">✏️</button>
+                            <button class="btn btn-xs" onclick="window.snapshots.deleteSnapshotGroup(${g.id}); event.stopPropagation();">🗑️</button>
                         </div>
                     </div>
                 </li>
             `).join('')}
         `;
+        console.log('✅ 快照组树渲染完成');
 
         // 加载快照组到下拉选择框
         loadSnapshotGroupsForModal();
     } catch (e) {
         console.error(e);
         const tree = document.getElementById('snapshotGroupTree');
-        tree.innerHTML = `
-            <li>
-                <div class="group-item ${window.currentSnapshotGroupId === '' ? 'active' : ''}" data-group-id="" onclick="filterBySnapshotGroup('')">
-                    <span class="icon">📁</span>
-                    <span>全部快照</span>
-                </div>
-            </li>
-        `;
+        if (tree) {
+            tree.innerHTML = `
+                <li>
+                    <div class="group-item ${window.currentSnapshotGroupId === '' ? 'active' : ''}" data-group-id="" onclick="window.snapshots.filterBySnapshotGroup('')">
+                        <span class="icon">📁</span>
+                        <span>全部快照</span>
+                    </div>
+                </li>
+            `;
+        }
     }
 }
 
@@ -101,7 +115,20 @@ async function loadSnapshotGroupsForModal() {
     } catch (e) { console.error(e); }
 }
 
-// 按快照组筛选快照
+// 按名称搜索
+let snapshotSearchTimer = null;
+function searchSnapshots() {
+    const q = document.getElementById('snapshotSearch').value.trim();
+    window.snapshotPagination.q = q;
+    window.snapshotPagination.page = 1; // 重置页码
+    
+    if (snapshotSearchTimer) clearTimeout(snapshotSearchTimer);
+    snapshotSearchTimer = setTimeout(() => {
+        loadSnapshots();
+    }, 500);
+}
+
+// 按快照组过滤
 function filterBySnapshotGroup(groupId) {
     window.currentSnapshotGroupId = groupId;
 
@@ -220,11 +247,27 @@ async function loadCheckItemListsForSnapshot() {
 }
 
 // 加载快照列表
-async function loadSnapshots() {
+async function loadSnapshots(page = null, size = null) {
+    if (page !== null) window.snapshotPagination.page = page;
+    if (size !== null) window.snapshotPagination.size = size;
+
     try {
+        const queryParams = new URLSearchParams({
+            page: window.snapshotPagination.page,
+            size: window.snapshotPagination.size
+        });
+        if (window.currentSnapshotGroupId) {
+            queryParams.append('group_id', window.currentSnapshotGroupId);
+        }
+        if (window.snapshotPagination.q) {
+            queryParams.append('q', window.snapshotPagination.q);
+        }
+
         // 同时获取快照列表和快照组列表
         const [snapshotsRes, groupsRes] = await Promise.all([
-            fetch(`${window.shared.API_BASE}/api/v1/snapshots`, { headers: window.shared.getHeaders() }),
+            fetch(`${window.shared.API_BASE}/api/v1/snapshots?${queryParams.toString()}`, { 
+                headers: window.shared.getHeaders() 
+            }),
             fetch(`${window.shared.API_BASE}/api/v1/snapshots/groups`, { headers: window.shared.getHeaders() }),
         ]);
 
@@ -238,35 +281,46 @@ async function loadSnapshots() {
             throw new Error('API请求失败');
         }
 
-        // 构建 group_id -> name 映射
+        const totalCount = parseInt(snapshotsRes.headers.get('X-Total-Count') || '0');
         const groups = groupsRes.ok ? await groupsRes.json() : [];
         const groupMap = {};
         groups.forEach(g => { groupMap[g.id] = g.name; });
 
-        const data = await snapshotsRes.json();
-        // 如果有筛选条件，只显示该组的快照
-        let snapshots = Array.isArray(data) ? data : [];
-        if (window.currentSnapshotGroupId) {
-            snapshots = snapshots.filter(s => s.group_id == window.currentSnapshotGroupId);
-        }
+        const snapshots = await snapshotsRes.json();
 
         const tbody = document.getElementById('snapshotTable');
+        if (!tbody) return;
+
         if (snapshots.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
-            return;
+        } else {
+            // 清理不在当前列表中的旧行
+            const currentIds = new Set(snapshots.map(s => String(s.id)));
+            Array.from(tbody.children).forEach(tr => {
+                if (tr.id === 'temp-build-row') return;
+                const sid = tr.dataset.snapshotId;
+                if (sid && !currentIds.has(String(sid))) {
+                    tr.remove();
+                }
+            });
         }
 
-        tbody.innerHTML = snapshots.map(s => {
+        // Helper to update only if changed
+        const updateIfChanged = (el, newHtml) => {
+            if (el && el.innerHTML !== newHtml) {
+                el.innerHTML = newHtml;
+            }
+        };
+
+
+        snapshots.forEach((s, index) => {
             const buildStatus = s.build_status;
             let statusHtml = '<span class="status-badge info">-</span>';
             if (buildStatus) {
                 if (buildStatus.status === 'pending') {
                     statusHtml = '<span class="status-badge warning">⏳ 等待启动</span>';
                 } else if (buildStatus.status === 'running') {
-                    statusHtml = `<span class="status-badge info">
-                        <span class="build-spinner"></span>
-                        ${buildStatus.progress || 0}% (${buildStatus.completed_communications || 0}/${buildStatus.total_communications || 0})
-                    </span>`;
+                    statusHtml = `<span class="status-badge info"><span class="build-spinner"></span>${buildStatus.progress || 0}% (${buildStatus.completed_communications || 0}/${buildStatus.total_communications || 0})</span>`;
                 } else if (buildStatus.status === 'completed') {
                     statusHtml = '<span class="status-badge success">✓ 已完成</span>';
                 } else if (buildStatus.status === 'failed') {
@@ -277,33 +331,64 @@ async function loadSnapshots() {
                     statusHtml = `<span class="status-badge info">${buildStatus.status}</span>`;
                 }
             }
-            return `
-                <tr data-snapshot-id="${s.id}">
+
+            const groupName = groupMap[s.group_id] || `组${s.group_id}`;
+            const timeStr = new Date(s.snapshot_time).toLocaleString();
+            const defaultHtml = `<span class="status-badge ${s.is_default ? 'success' : 'info'}">${s.is_default ? '是' : '否'}</span>`;
+            const actionHtml = `
+                <button class="btn btn-primary btn-sm" onclick="snapshots.viewSnapshotDetail(${s.id})">查看</button>
+                <button class="btn btn-danger btn-sm" onclick="snapshots.deleteSnapshot(${s.id})">删除</button>
+            `;
+
+            let row = tbody.querySelector(`tr[data-snapshot-id="${s.id}"]`);
+            if (row) {
+                // Update cells
+                updateIfChanged(row.cells[1], s.name);
+                updateIfChanged(row.cells[2], groupName);
+                updateIfChanged(row.cells[3], timeStr);
+                updateIfChanged(row.cells[4], defaultHtml);
+                updateIfChanged(row.cells[5], statusHtml);
+                updateIfChanged(row.cells[6], actionHtml);
+                
+                // Keep order
+                if (tbody.children[index] !== row && tbody.children[index]?.id !== 'temp-build-row') {
+                    tbody.insertBefore(row, tbody.children[index]);
+                }
+            } else {
+                const tr = document.createElement('tr');
+                tr.dataset.snapshotId = s.id;
+                tr.innerHTML = `
                     <td>${s.id}</td>
                     <td>${s.name}</td>
-                    <td>${groupMap[s.group_id] || `组${s.group_id}`}</td>
-                    <td>${new Date(s.snapshot_time).toLocaleString()}</td>
-                    <td><span class="status-badge ${s.is_default ? 'success' : 'info'}">${s.is_default ? '是' : '否'}</span></td>
-                    <td>${statusHtml}</td>
-                    <td>
-                        <button class="btn btn-primary btn-sm" onclick="snapshots.viewSnapshotDetail(${s.id})">查看</button>
-                        <button class="btn btn-danger btn-sm" onclick="snapshots.deleteSnapshot(${s.id})">删除</button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+                    <td>${groupName}</td>
+                    <td>${timeStr}</td>
+                    <td>${defaultHtml}</td>
+                    <td class="status-cell">${statusHtml}</td>
+                    <td>${actionHtml}</td>
+                `;
+                // Insert at correct position
+                if (tbody.children[index]) {
+                    tbody.insertBefore(tr, tbody.children[index]);
+                } else {
+                    tbody.appendChild(tr);
+                }
+            }
+        });
+        // 渲染分页
+        window.paginationManager.render(
+            'snapshotsPagination', 
+            totalCount, 
+            window.snapshotPagination.page, 
+            window.snapshotPagination.size, 
+            (newPage, newSize) => {
+                loadSnapshots(newPage, newSize);
+            }
+        );
     } catch (e) {
         console.error(e);
         const tbody = document.getElementById('snapshotTable');
-        tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败，请刷新页面重试</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败，请刷新页面重试</td></tr>';
     }
-}
-
-// 搜索快照
-function searchSnapshots() {
-    const searchTerm = document.getElementById('snapshotSearch').value.toLowerCase();
-    // 这里可以实现更复杂的搜索逻辑
-    loadSnapshots();
 }
 
 // 删除快照
@@ -345,7 +430,7 @@ async function pollActiveBuildTasks() {
         const tasks = await res.json();
 
         if (tasks.length === 0) {
-            stopBuildPolling();
+            removeBuildingRow();
             await loadSnapshots();
             return;
         }
@@ -358,7 +443,7 @@ async function pollActiveBuildTasks() {
         // 检查是否有任务结束
         const hasRunning = tasks.some(t => t.status === 'pending' || t.status === 'running');
         if (!hasRunning) {
-            stopBuildPolling();
+            removeBuildingRow();
             await loadSnapshots();
         }
     } catch (e) {
@@ -370,23 +455,26 @@ async function pollActiveBuildTasks() {
 function updateSnapshotBuildStatus(task) {
     const row = document.querySelector(`tr[data-snapshot-id="${task.snapshot_id}"]`);
     if (!row) return;
-    const statusCell = row.querySelector('td:nth-child(6)');
+    const statusCell = row.cells[5]; // 使用索引定位，对应 loadSnapshots 中的顺序
+    if (!statusCell) return;
 
+    let statusHtml = '';
     if (task.status === 'pending') {
-        statusCell.innerHTML = '<span class="status-badge warning">⏳ 等待启动</span>';
+        statusHtml = '<span class="status-badge warning">⏳ 等待启动</span>';
     } else if (task.status === 'running') {
-        statusCell.innerHTML = `<span class="status-badge info">
-            <span class="build-spinner"></span>
-            ${task.progress || 0}% (${task.completed_communications || 0}/${task.total_communications || 0})
-        </span>`;
+        statusHtml = `<span class="status-badge info"><span class="build-spinner"></span>${task.progress || 0}% (${task.completed_communications || 0}/${task.total_communications || 0})</span>`;
     } else if (task.status === 'completed') {
-        statusCell.innerHTML = '<span class="status-badge success">✓ 已完成</span>';
+        statusHtml = '<span class="status-badge success">✓ 已完成</span>';
     } else if (task.status === 'failed') {
-        statusCell.innerHTML = `<span class="status-badge error" title="${task.error_message || ''}">✗ 构建异常</span>`;
+        statusHtml = `<span class="status-badge error" title="${task.error_message || ''}">✗ 构建异常</span>`;
     } else if (task.status === 'cancelled') {
-        statusCell.innerHTML = '<span class="status-badge warning">- 已取消</span>';
+        statusHtml = '<span class="status-badge warning">- 已取消</span>';
     } else {
-        statusCell.innerHTML = `<span class="status-badge info">${task.status}</span>`;
+        statusHtml = `<span class="status-badge info">${task.status}</span>`;
+    }
+
+    if (statusCell.innerHTML !== statusHtml) {
+        statusCell.innerHTML = statusHtml;
     }
 }
 
@@ -419,16 +507,179 @@ function insertBuildingRow(snapshotName, groupId) {
 
 // 快照构建相关
 
+// --- 快照构建多选逻辑 (Row Based) ---
+let currentBuildRows = [];
+
 // 打开构建对话框
-function openSnapshotBuildModal() {
+async function openSnapshotBuildModal() {
     document.getElementById('buildSnapshotName').value = '';
-    loadSnapshotGroupsForBuild();
-    loadCommunicationGroupsTree();
+    
+    // 确保字典已加载（用于渲染检查列表下拉框）
+    if (window.checks && window.checks.loadDictionaries) {
+        await window.checks.loadDictionaries();
+    }
+    
+    await loadSnapshotGroupsForBuild();
+    
+    // 初始化两行 (演示多行)
+    currentBuildRows = [{
+        check_item_list_id: null,
+        group_id: null,
+        communication_ids: []
+    }];
+    renderBuildRows();
+    
     document.getElementById('snapshotBuildModal').classList.add('active');
 }
 
-function closeSnapshotBuildModal() {
-    document.getElementById('snapshotBuildModal').classList.remove('active');
+function renderBuildRows() {
+    const container = document.getElementById('buildRowsContainer');
+    if (!container) return;
+    
+    if (currentBuildRows.length === 0) {
+        container.innerHTML = '<div class="empty-text" style="padding: 20px;">请添加至少一条配置行</div>';
+        return;
+    }
+
+    const dicts = window.checks.dicts;
+    const lists = Object.values(dicts.checkItem.groups);
+    const groups = Object.values(dicts.communication.groups);
+    
+    let html = '';
+    currentBuildRows.forEach((row, idx) => {
+        let listOptions = lists.map(l => `<option value="${l.id}" ${row.check_item_list_id == l.id ? 'selected' : ''}>${l.name}</option>`).join('');
+        let groupOptions = groups.map(g => `<option value="${g.id}" ${row.group_id == g.id ? 'selected' : ''}>${g.name}</option>`).join('');
+
+        // 找到该组下的所有通信机
+        const commsInGroup = row.group_id ? Object.values(dicts.communication.items).filter(c => c.group_id == row.group_id) : [];
+        const selectedCount = row.communication_ids.length;
+        
+        html += `
+        <div class="build-config-row" style="background: var(--bg-surface); padding: 15px; border-radius: var(--radius-md); margin-bottom: 12px; border: 1px solid var(--border-default); box-shadow: 0 4px 12px rgba(0,0,0,0.2);">
+            <div style="display: flex; gap: 15px; align-items: flex-end; margin-bottom: 10px;">
+                <div style="flex: 1.2;">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">📋 选择检查项列表 (Tier 1)</div>
+                    <select class="form-control" onchange="window.snapshots.updateBuildRowList(${idx}, this.value)">
+                        <option value="">-- 请选择列表 --</option>
+                        ${listOptions}
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">📁 选择资产分组 (Tier 2)</div>
+                    <select class="form-control" onchange="window.snapshots.updateBuildRowGroup(${idx}, this.value)">
+                        <option value="">-- 全部分组 --</option>
+                        <option value="null" ${row.group_id === 'null' ? 'selected' : ''}>未分组资产</option>
+                        ${groupOptions}
+                    </select>
+                </div>
+                <div style="flex: 1;">
+                    <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">💻 资产范围 (Tier 3)</div>
+                    <div style="display: flex; gap: 8px; align-items: center; background: var(--bg-deepest); padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-subtle);">
+                        <span style="font-weight: 600; font-size: 13px; color: var(--accent);">已选 ${selectedCount} 项</span>
+                        <button type="button" class="btn-xs btn-outline-primary" style="padding: 2px 6px;" onclick="window.snapshots.toggleSelectAllInRow(${idx})">全选/清空</button>
+                    </div>
+                </div>
+                <div class="row-actions">
+                    <button type="button" class="btn-icon" onclick="window.snapshots.removeBuildRow(${idx})" title="删除此行" style="color: var(--danger); font-size: 18px; padding: 4px;">🗑️</button>
+                </div>
+            </div>
+            
+            ${row.group_id !== null ? `
+            <div class="comms-mini-tree" style="margin-top: 10px; padding: 10px; background: var(--bg-deepest); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); max-height: 150px; overflow-y: auto;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px;">
+                    ${commsInGroup.length > 0 ? commsInGroup.map(c => `
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${c.name} (${c.ip_address})">
+                            <input type="checkbox" value="${c.id}" ${row.communication_ids.includes(c.id) ? 'checked' : ''} 
+                                   onchange="window.snapshots.updateBuildRowComm(${idx}, ${c.id}, this.checked)" style="width: 14px; height: 14px; flex-shrink: 0;">
+                            <span>${c.name} <span style="font-size: 10px; color: var(--text-muted);">${c.ip_address}</span></span>
+                        </label>
+                    `).join('') : '<div style="color: var(--text-muted); font-size: 12px; grid-column: 1/-1;">该组下无通信机数据</div>'}
+                </div>
+            </div>
+            ` : ''}
+        </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+    updateBuildSelectionCount();
+}
+
+function addBuildRow() {
+    currentBuildRows.push({
+        check_item_list_id: null,
+        group_id: null,
+        communication_ids: []
+    });
+    renderBuildRows();
+}
+
+function removeBuildRow(idx) {
+    currentBuildRows.splice(idx, 1);
+    renderBuildRows();
+}
+
+function updateBuildRowList(idx, val) {
+    if (currentBuildRows[idx]) {
+        currentBuildRows[idx].check_item_list_id = val ? parseInt(val) : null;
+    }
+}
+
+function updateBuildRowGroup(idx, val) {
+    if (currentBuildRows[idx]) {
+        const row = currentBuildRows[idx];
+        row.group_id = val === "" ? null : (val === "null" ? "null" : parseInt(val));
+        
+        // 自动选择该组下的所有通信机 (提升效率)
+        const dicts = window.checks.dicts;
+        const commsInGroup = row.group_id ? Object.values(dicts.communication.items).filter(c => {
+            if (row.group_id === "null") return !c.group_id;
+            return c.group_id == row.group_id;
+        }) : [];
+        
+        row.communication_ids = commsInGroup.map(c => c.id);
+        renderBuildRows();
+    }
+}
+
+function updateBuildRowComm(idx, commId, checked) {
+    const row = currentBuildRows[idx];
+    if (!row) return;
+    
+    if (checked) {
+        if (!row.communication_ids.includes(commId)) row.communication_ids.push(commId);
+    } else {
+        const i = row.communication_ids.indexOf(commId);
+        if (i > -1) row.communication_ids.splice(i, 1);
+    }
+    updateBuildSelectionCount();
+}
+
+function toggleSelectAllInRow(idx) {
+    const row = currentBuildRows[idx];
+    if (!row || !row.group_id) return;
+    
+    const dicts = window.checks.dicts;
+    const allIds = Object.values(dicts.communication.items).filter(c => {
+        if (row.group_id === "null") return !c.group_id;
+        return c.group_id == row.group_id;
+    }).map(c => c.id);
+    
+    if (row.communication_ids.length === allIds.length) {
+        row.communication_ids = [];
+    } else {
+        row.communication_ids = allIds;
+    }
+    renderBuildRows();
+}
+
+function updateBuildSelectionCount() {
+    let total = 0;
+    currentBuildRows.forEach(row => {
+        total += row.communication_ids.length;
+    });
+    const el = document.getElementById('buildSelectionCount');
+    if (el) el.textContent = `总计选择: ${total} 次采集任务`;
 }
 
 // 加载快照组到构建对话框
@@ -441,193 +692,21 @@ async function loadSnapshotGroupsForBuild() {
     } catch (e) { console.error(e); }
 }
 
-// 加载构建快照的 M:M 配置树 (检查项列表 -> 通信机组)
-async function loadCommunicationGroupsTree() {
-    try {
-        const [listsRes, groupsRes, commsRes] = await Promise.all([
-            fetch(`${window.shared.API_BASE}/api/v1/check-items/lists`, { headers: window.shared.getHeaders() }),
-            fetch(`${window.shared.API_BASE}/api/v1/communications/groups`, { headers: window.shared.getHeaders() }),
-            fetch(`${window.shared.API_BASE}/api/v1/communications`, { headers: window.shared.getHeaders() })
-        ]);
-
-        const lists = await listsRes.json();
-        const groups = await groupsRes.json();
-        const comms = await commsRes.json();
-
-        const container = document.getElementById('commGroupTree');
-        let html = '';
-
-        if (lists.length === 0) {
-            container.innerHTML = '<div class="empty-state">请先在"检查项工作空间"创建检查项列表</div>';
-            return;
-        }
-
-        // 递归渲染组树 (纯 CSS class 驱动展开/收起)
-        function renderGroupTree(listId, parentId = null) {
-            const currentGroups = groups.filter(g => g.parent_id == parentId);
-            const ungroupedComms = parentId === null ? comms.filter(c => !c.group_id) : [];
-            
-            if (currentGroups.length === 0 && ungroupedComms.length === 0 && parentId !== null) return '';
-
-            let groupHtml = '';
-            
-            // 渲染当前层级的组
-            currentGroups.forEach(group => {
-                const groupComms = comms.filter(c => c.group_id == group.id);
-                const childrenHtml = renderGroupTree(listId, group.id);
-                const hasChildren = groupComms.length > 0 || childrenHtml.length > 0;
-                
-                groupHtml += `
-                    <div class="build-group-item" id="group-container-${listId}-${group.id}">
-                        <div class="group-header" onclick="snapshots.toggleGroupExpand(this.parentElement, event)">
-                            <input type="checkbox" class="group-checkbox" 
-                                   data-list-id="${listId}"
-                                   data-group-id="${group.id}"
-                                   onclick="event.stopPropagation()"
-                                   onchange="snapshots.toggleGroupSelection(${listId}, ${group.id}, this.checked)">
-                            <span class="group-chevron">▶</span>
-                            <span class="view-toggle">📁</span>
-                            <span class="group-name">${group.name}</span>
-                            <span class="group-count">${groupComms.length} 台</span>
-                        </div>
-                        <div class="group-content">
-                            ${groupComms.map(c => `
-                                <label class="comm-item">
-                                    <input type="checkbox" name="comm-node" 
-                                           data-list-id="${listId}" 
-                                           data-group-id="${group.id}" 
-                                           value="${c.id}" 
-                                           onchange="snapshots.updateBuildSelection()">
-                                    <span>${c.name} <small>(${c.ip_address})</small></span>
-                                </label>
-                            `).join('')}
-                            ${childrenHtml}
-                        </div>
-                    </div>
-                `;
-            });
-
-            // 如果是顶级，也渲染那些没有分组的通信机
-            if (parentId === null && ungroupedComms.length > 0) {
-                groupHtml += `
-                    <div class="build-group-item">
-                        <div class="group-header" onclick="snapshots.toggleGroupExpand(this.parentElement, event)">
-                            <span class="group-chevron">▶</span>
-                            <span class="view-toggle">🌐</span>
-                            <span class="group-name">未分组资产</span>
-                            <span class="group-count">${ungroupedComms.length} 台</span>
-                        </div>
-                        <div class="group-content">
-                            ${ungroupedComms.map(c => `
-                                <label class="comm-item">
-                                    <input type="checkbox" name="comm-node" 
-                                           data-list-id="${listId}" 
-                                           data-group-id="null" 
-                                           value="${c.id}" 
-                                           onchange="snapshots.updateBuildSelection()">
-                                    <span>${c.name} <small>(${c.ip_address})</small></span>
-                                </label>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-            }
-
-            return groupHtml;
-        }
-
-        lists.forEach(list => {
-            html += `
-                <div class="build-task-card" data-list-id="${list.id}">
-                    <div class="task-header" onclick="snapshots.toggleListExpand(${list.id})">
-                        <span class="task-chevron" id="list-chevron-${list.id}">▶</span>
-                        <span class="icon">📋</span>
-                        <span class="task-title">${list.name}</span>
-                        <span class="task-count" id="list-count-${list.id}">已选 0 台</span>
-                    </div>
-                    <div class="task-body" id="list-body-${list.id}" style="display:none; padding:10px 15px;">
-                        <p class="build-hint">在下方资产架构中勾选此列表拟进行采集的目标：</p>
-                        ${renderGroupTree(list.id)}
-                    </div>
-                </div>
-            `;
-        });
-
-        container.innerHTML = html;
-        updateBuildSelection();
-    } catch (e) { console.error('加载构建配置失败:', e); }
-}
-
-function toggleListExpand(listId) {
-    const body = document.getElementById(`list-body-${listId}`);
-    const chevron = document.getElementById(`list-chevron-${listId}`);
-    const isHidden = body.style.display === 'none';
-    body.style.display = isHidden ? 'block' : 'none';
-    chevron.textContent = isHidden ? '▼' : '▶';
-}
-
-// CSS class 驱动的展开/收起 — 每个 group-item 独立控制自身 .expanded
-function toggleGroupExpand(groupElement, event) {
-    if (event) event.stopPropagation();
-    if (!groupElement) return;
-    groupElement.classList.toggle('expanded');
-}
-
-function toggleGroupSelection(listId, groupId, checked) {
-    // 递归选择当前组及其子组下的所有通信机
-    const container = document.getElementById(`group-container-${listId}-${groupId}`);
-    if (!container) return;
-
-    // 1. 选中下属所有的通信机节点
-    const comms = container.querySelectorAll('input[name="comm-node"]');
-    comms.forEach(c => c.checked = checked);
-
-    // 2. 选中下属所有的子组选择框 (视觉同步)
-    const childGroupChecks = container.querySelectorAll('.group-checkbox');
-    childGroupChecks.forEach(c => c.checked = checked);
-
-    updateBuildSelection();
-}
-
-function updateBuildSelection() {
-    let totalComms = 0;
-    const taskCards = document.querySelectorAll('.build-task-card');
-    
-    taskCards.forEach(card => {
-        const lid = card.dataset.listId;
-        const checkedNodes = card.querySelectorAll('input[name="comm-node"]:checked');
-        const countEl = document.getElementById(`list-count-${lid}`);
-        if (countEl) countEl.textContent = `已选 ${checkedNodes.length} 台`;
-        totalComms += checkedNodes.length;
-    });
-    
-    const totalEl = document.getElementById('buildSelectionCount');
-    if (totalEl) totalEl.textContent = `总计选择: ${totalComms} 次采集任务`;
+function closeSnapshotBuildModal() {
+    document.getElementById('snapshotBuildModal').classList.remove('active');
 }
 
 function getBuildConfig() {
     const config = [];
-    const taskCards = document.querySelectorAll('.build-task-card');
     
-    taskCards.forEach(card => {
-        const listId = parseInt(card.dataset.listId);
-        const checkedNodes = Array.from(card.querySelectorAll('input[name="comm-node"]:checked')).map(cb => parseInt(cb.value));
+    currentBuildRows.forEach(row => {
+        if (!row.check_item_list_id || row.communication_ids.length === 0) return;
         
-        if (checkedNodes.length > 0) {
-            // 找到涉及的所有 group_ids
-            const groupIds = new Set(Array.from(card.querySelectorAll('input[name="comm-node"]:checked')).map(cb => parseInt(cb.dataset.groupId)));
-            
-            groupIds.forEach(gid => {
-                const groupComms = Array.from(card.querySelectorAll(`input[name="comm-node"][data-group-id="${gid}"]:checked`)).map(cb => parseInt(cb.value));
-                if (groupComms.length > 0) {
-                    config.push({
-                        check_item_list_id: listId,
-                        group_id: gid,
-                        communication_ids: groupComms
-                    });
-                }
-            });
-        }
+        config.push({
+            check_item_list_id: row.check_item_list_id,
+            group_id: (row.group_id === "null" ? null : row.group_id),
+            communication_ids: row.communication_ids
+        });
     });
     
     return config;
@@ -958,29 +1037,30 @@ function filterSnapshotTree() {
     });
 }
 
+// 刷新快照页面（重置分页和搜索）
+async function refreshSnapshots() {
+    console.log('🔄 正在刷新快照数据...');
+    window.snapshotPagination.page = 1;
+    window.snapshotPagination.q = '';
+    const searchInput = document.getElementById('snapshotSearch');
+    if (searchInput) searchInput.value = '';
+    
+    try {
+        // 加载分组和列表
+        await loadSnapshotGroups();
+        await loadSnapshots();
+        console.log('✅ 快照数据刷新完成');
+    } catch (e) {
+        console.error('❌ 刷新快照失败:', e);
+    }
+}
+
 // 导出模块
 window.snapshots = {
-    openSnapshotGroupModal,
-    loadSnapshotGroups,
-    filterBySnapshotGroup,
-    editSnapshotGroup,
-    deleteSnapshotGroup,
-    openSnapshotModal,
-    loadSnapshots,
-    searchSnapshots,
-    deleteSnapshot,
-    openSnapshotBuildModal,
-    closeSnapshotBuildModal,
-    startSnapshotBuild,
-    cancelSnapshotBuild,
-    viewSnapshotDetail,
-    closeSnapshotDetail,
-    toggleTreeNode,
-    filterSnapshotTree,
-    startBuildPolling,
-    stopBuildPolling,
-    toggleListExpand,
-    toggleGroupExpand,
-    toggleGroupSelection,
-    updateBuildSelection,
+    openSnapshotGroupModal, loadSnapshotGroups, filterBySnapshotGroup, editSnapshotGroup, deleteSnapshotGroup, 
+    openSnapshotModal, loadSnapshots, searchSnapshots, deleteSnapshot, refreshSnapshots,
+    openSnapshotBuildModal, closeSnapshotBuildModal, startSnapshotBuild, cancelSnapshotBuild,
+    viewSnapshotDetail, closeSnapshotDetail, toggleTreeNode, filterSnapshotTree,
+    startBuildPolling, stopBuildPolling,
+    addBuildRow, removeBuildRow, updateBuildRowList, updateBuildRowGroup, updateBuildRowComm, toggleSelectAllInRow
 };

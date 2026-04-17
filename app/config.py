@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "运行环境检查系统"
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = False
+    TIMEZONE: str = "Asia/Shanghai"
 
     # 数据库配置
     # 开发环境默认使用 SQLite，生产环境使用 MySQL

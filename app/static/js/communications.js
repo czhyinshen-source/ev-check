@@ -2,6 +2,8 @@
 
 // 模块状态变量
 let currentGroupId = '';
+// 分页状态
+window.commPagination = { page: 1, size: 5, q: '' };
 // 从localStorage加载通信机连接状态，持久化存储
 let communicationStatuses = JSON.parse(localStorage.getItem('communicationStatuses') || '{}');
 // 拖拽状态
@@ -116,7 +118,29 @@ async function loadGroups() {
 
         const getCountByGroup = (groupId) => {
             if (groupId === '' || groupId === null) return comms.length;
-            return comms.filter(c => c.group_id === groupId).length;
+            
+            const validIds = [groupId];
+            const findAndCollect = (list) => {
+                for (const g of list) {
+                    if (g.id === groupId) {
+                        const collectAll = (node) => {
+                            if (node.children) {
+                                node.children.forEach(c => {
+                                    validIds.push(c.id);
+                                    collectAll(c);
+                                });
+                            }
+                        };
+                        collectAll(g);
+                        return true;
+                    }
+                    if (g.children && findAndCollect(g.children)) return true;
+                }
+                return false;
+            };
+            findAndCollect(groups);
+            
+            return comms.filter(c => validIds.includes(c.group_id)).length;
         };
 
         // 递归渲染分组树
@@ -172,6 +196,7 @@ function toggleGroupChildren(event, groupId) {
 // 按分组筛选通信机
 function filterByGroup(groupId) {
     currentGroupId = groupId;
+    window.commPagination.page = 1;
     document.querySelectorAll('.group-item').forEach(item => {
         item.classList.toggle('active', item.dataset.groupId == groupId);
     });
@@ -179,11 +204,12 @@ function filterByGroup(groupId) {
 }
 
 // 加载通信机列表
-async function loadCommunications() {
+async function loadCommunications(page = null, size = null) {
+    if (page !== null) window.commPagination.page = page;
+    if (size !== null) window.commPagination.size = size;
+
     const { API_BASE, getHeaders } = window.shared;
     try {
-        console.log('开始加载通信机列表...');
-
         // 加载批量操作工具栏的分组下拉框
         try {
             const groupsRes = await fetch(`${API_BASE}/api/v1/communications/groups`, { headers: getHeaders() });
@@ -198,70 +224,76 @@ async function loadCommunications() {
             console.error('加载分组列表失败:', e);
         }
 
-        const res = await fetch(`${API_BASE}/api/v1/communications`, { headers: getHeaders() });
+        const queryParams = new URLSearchParams({
+            page: window.commPagination.page,
+            size: window.commPagination.size
+        });
+        if (currentGroupId) queryParams.append('group_id', currentGroupId);
+        if (window.commPagination.q) queryParams.append('q', window.commPagination.q);
 
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-        }
+        const res = await fetch(`${API_BASE}/api/v1/communications?${queryParams.toString()}`, { headers: getHeaders() });
 
-        let comms = await res.json();
-        console.log('成功加载通信机列表，数量:', comms.length);
+        if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
 
-        if (currentGroupId) {
-            comms = comms.filter(c => c.group_id == currentGroupId);
-        }
-
-        const searchTerm = document.getElementById('commSearch')?.value?.toLowerCase() || '';
-        if (searchTerm) {
-            comms = comms.filter(c =>
-                c.name.toLowerCase().includes(searchTerm) ||
-                c.ip_address.toLowerCase().includes(searchTerm)
-            );
-        }
+        const totalCount = parseInt(res.headers.get('X-Total-Count') || '0');
+        const comms = await res.json();
 
         const tbody = document.getElementById('commTable');
+        if (!tbody) return;
+
         if (comms.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
-            return;
+        } else {
+            tbody.innerHTML = comms.map(c => {
+                const status = communicationStatuses[c.id] || 'unknown';
+                return `
+                    <tr>
+                        <td><input type="checkbox" name="communicationIds" value="${c.id}" onchange="updateBatchToolbar()"></td>
+                        <td>${c.name}</td>
+                        <td>${c.ip_address}</td>
+                        <td>${c.port}</td>
+                        <td>${c.username}</td>
+                        <td>
+                            <span class="status-badge ${status === 'online' ? 'success' : status === 'offline' ? 'error' : 'info'}">
+                                <span class="status-dot ${status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown'}"></span>
+                                ${status === 'online' ? '在线' : status === 'offline' ? '离线' : '未连接'}
+                            </span>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="testConnection(event, ${c.id})">测试</button>
+                            <button type="button" class="btn btn-primary btn-sm" onclick="editComm(${c.id})">编辑</button>
+                            <button type="button" class="btn btn-danger btn-sm" onclick="deleteComm(${c.id})">删除</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
         }
 
-        tbody.innerHTML = comms.map(c => {
-            // 获取本地存储的连接状态，默认为'unknown'
-            const status = communicationStatuses[c.id] || 'unknown';
-            return `
-                <tr>
-                    <td><input type="checkbox" name="communicationIds" value="${c.id}" onchange="updateBatchToolbar()"></td>
-                    <td>${c.name}</td>
-                    <td>${c.ip_address}</td>
-                    <td>${c.port}</td>
-                    <td>${c.username}</td>
-                    <td>
-                        <span class="status-badge ${status === 'online' ? 'success' : status === 'offline' ? 'error' : 'info'}">
-                            <span class="status-dot ${status === 'online' ? 'online' : status === 'offline' ? 'offline' : 'unknown'}"></span>
-                            ${status === 'online' ? '在线' : status === 'offline' ? '离线' : '未连接'}
-                        </span>
-                    </td>
-                    <td>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="testConnection(event, ${c.id})">测试</button>
-                        <button type="button" class="btn btn-primary btn-sm" onclick="editComm(${c.id})">编辑</button>
-                        <button type="button" class="btn btn-danger btn-sm" onclick="deleteComm(${c.id})">删除</button>
-                    </td>
-                </tr>
-            `;
-        }).join('');
+        // 渲染分页
+        window.paginationManager.render(
+            'commPagination',
+            totalCount,
+            window.commPagination.page,
+            window.commPagination.size,
+            (newPage, newSize) => loadCommunications(newPage, newSize)
+        );
     } catch (error) {
         console.error('加载通信机列表失败:', error);
         const tbody = document.getElementById('commTable');
-        if (tbody) {
-            tbody.innerHTML = '<tr><td colspan="6" class="empty-state">加载失败: ' + error.message + '</td></tr>';
-        }
+        if (tbody) tbody.innerHTML = `<tr><td colspan="7" class="empty-state">加载失败: ${error.message}</td></tr>`;
     }
 }
 
-// 搜索通信机
+// 搜索通信机（防抖）
+let commSearchTimer = null;
 function searchCommunications() {
-    loadCommunications();
+    const q = document.getElementById('commSearch')?.value?.trim() || '';
+    window.commPagination.q = q;
+    window.commPagination.page = 1;
+    if (commSearchTimer) clearTimeout(commSearchTimer);
+    commSearchTimer = setTimeout(() => loadCommunications(), 500);
 }
+
 
 // 测试通信机连接
 async function testConnection(event, id) {
@@ -476,9 +508,28 @@ function toggleDeployFields() {
 }
 
 // 下载Excel模板
-function downloadExcelTemplate() {
-    const { API_BASE } = window.shared;
-    window.location.href = `${API_BASE}/api/v1/communications/excel-template`;
+async function downloadExcelTemplate() {
+    const { API_BASE, getHeaders } = window.shared;
+    try {
+        const res = await fetch(`${API_BASE}/api/v1/communications/excel-template`, {
+            headers: getHeaders()
+        });
+        if (!res.ok) {
+            throw new Error('下载失败');
+        }
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = '通信机导入模板.xlsx';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (e) {
+        console.error(e);
+        alert('模板下载失败: ' + e.message);
+    }
 }
 
 // 打开批量部署公钥模态框
@@ -510,7 +561,7 @@ async function loadCommunicationCheckboxes() {
         const comms = await res.json();
         const container = document.getElementById('commCheckboxList');
         container.innerHTML = comms.map(c => `
-            <label style="display: flex; align-items: center; gap: 5px; margin-bottom: 5px;">
+            <label>
                 <input type="checkbox" name="communicationIds" value="${c.id}">
                 <span>${c.name} (${c.ip_address})</span>
             </label>

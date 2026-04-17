@@ -1,4 +1,13 @@
+(function() {
+    'use strict';
+
 // 检查项管理模块
+window.currentCheckItemListId = '';
+window.checkItemPagination = {
+    page: 1,
+    size: 5,
+    q: ''
+};
 
 // 解析 type 字段（可能是 JSON 字符串、数组或单个字符串）
 function parseItemType(type) {
@@ -34,8 +43,14 @@ function openCheckItemModal(id = null) {
     const el = (id) => document.getElementById(id);
     if (el('checkItemId')) el('checkItemId').value = id || '';
     if (el('checkItemName')) el('checkItemName').value = '';
-    if (el('checkItemTarget')) el('checkItemTarget').value = '';
     if (el('checkItemDesc')) el('checkItemDesc').value = '';
+    
+    // 重置分类选择
+    if (el('checkItemCategory')) {
+        el('checkItemCategory').value = '';
+        toggleCheckItemCategory();
+    }
+    
     // 重置检查类型复选框
     document.querySelectorAll('input[name="checkItemType"]').forEach(checkbox => {
         checkbox.checked = false;
@@ -43,14 +58,15 @@ function openCheckItemModal(id = null) {
     if (typeof toggleCheckItemFields === 'function') toggleCheckItemFields();
     if (el('checkItemModalTitle')) el('checkItemModalTitle').textContent = id ? '编辑检查项' : '添加检查项';
 
-    // 加载检查项列表到选择器
-    loadCheckItemListSelect();
+    // 如果没有 id (即新建)，则尝试预选当前所在的列表
+    const initialListId = id ? null : window.currentCheckItemListId;
+    loadCheckItemListSelect(initialListId);
 
     if (el('checkItemModal')) el('checkItemModal').classList.add('active');
 }
 
 // 加载检查项列表到选择器
-async function loadCheckItemListSelect() {
+async function loadCheckItemListSelect(selectedId = null) {
     try {
         const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists`, { headers: window.shared.getHeaders() });
         if (!res.ok) return;
@@ -59,12 +75,16 @@ async function loadCheckItemListSelect() {
         if (select) {
             select.innerHTML = '<option value="">不指定</option>' +
                 lists.map(list => `<option value="${list.id}">${list.name}</option>`).join('');
+            
+            // 如果指定了 selectedId，则进行选中
+            if (selectedId) {
+                select.value = selectedId;
+            }
         }
     } catch (e) {
         console.error('加载检查项列表失败:', e);
     }
 }
-
 
 // 加载检查项列表
 async function loadCheckItemLists() {
@@ -76,14 +96,13 @@ async function loadCheckItemLists() {
             return;
         }
         const data = await res.json();
-        // 确保 lists 是数组
         const lists = Array.isArray(data) ? data : [];
         const tree = document.getElementById('checkItemListTree');
 
         // 保留默认的"全部检查项"选项
         tree.innerHTML = `
             <li>
-                <div class="group-item active" data-list-id="" onclick="selectCheckItemList('')">
+                <div class="group-item active" data-list-id="" onclick="window.checkitems.selectCheckItemList('')">
                     <span class="icon">📁</span>
                     <span>全部检查项</span>
                 </div>
@@ -94,7 +113,7 @@ async function loadCheckItemLists() {
         lists.forEach(list => {
             const listItem = document.createElement('li');
             listItem.innerHTML = `
-                <div class="group-item" data-list-id="${list.id}" onclick="selectCheckItemList(${list.id})"><span class="icon">📋</span>
+                <div class="group-item" data-list-id="${list.id}" onclick="window.checkitems.selectCheckItemList(${list.id})"><span class="icon">📋</span>
                     <span>${list.name}</span>
                     <div class="list-actions">
                         <button class="btn btn-xs" onclick="window.checkitems.editCheckItemList(${list.id}); event.stopPropagation();">✏️</button>
@@ -110,7 +129,6 @@ async function loadCheckItemLists() {
         alert('❌ 加载检查项列表失败，请刷新页面重试');
     }
 }
-
 
 // 编辑检查项列表
 async function editCheckItemList(id) {
@@ -139,21 +157,48 @@ async function deleteCheckItemList(id) {
     } catch (e) { console.error(e); }
 }
 
+// 搜索检查项
+let checkItemSearchTimer = null;
+function searchCheckItems() {
+    const q = document.getElementById('checkItemSearch').value.trim();
+    window.checkItemPagination.q = q;
+    window.checkItemPagination.page = 1; // 重置页码
+    
+    if (checkItemSearchTimer) clearTimeout(checkItemSearchTimer);
+    checkItemSearchTimer = setTimeout(() => {
+        loadCheckItems();
+    }, 500);
+}
+
 // 加载检查项
-async function loadCheckItems(listId = '') {
+async function loadCheckItems(page = null, size = null) {
+    if (page !== null) window.checkItemPagination.page = page;
+    if (size !== null) window.checkItemPagination.size = size;
+
     try {
         const { API_BASE } = window.shared;
-        let url = `${API_BASE}/api/v1/check-items`;
-        if (listId) {
-            url = `${API_BASE}/api/v1/check-items?list_id=${listId}`;
+        const queryParams = new URLSearchParams({
+            page: window.checkItemPagination.page,
+            size: window.checkItemPagination.size
+        });
+        
+        if (window.currentCheckItemListId) {
+            queryParams.append('list_id', window.currentCheckItemListId);
+        }
+        if (window.checkItemPagination.q) {
+            queryParams.append('q', window.checkItemPagination.q);
         }
 
-        const res = await fetch(url, { headers: window.shared.getHeaders() });
-        const items = await res.json();
-        const tbody = document.getElementById('checkItemTable');
+        const res = await fetch(`${API_BASE}/api/v1/check-items?${queryParams.toString()}`, { 
+            headers: window.shared.getHeaders() 
+        });
 
-        // 直接使用返回的数组
-        const checkItems = items;
+        if (!res.ok) throw new Error('API请求失败');
+
+        const totalCount = parseInt(res.headers.get('X-Total-Count') || '0');
+        const checkItems = await res.json();
+        const tbody = document.getElementById('checkItemTable');
+        if (!tbody) return;
 
         // 格式化检查类型用于显示
         const formatType = (type) => {
@@ -173,35 +218,56 @@ async function loadCheckItems(listId = '') {
             return types.map(t => typeMap[t] || t).join(', ');
         };
 
-        tbody.innerHTML = checkItems.map(item => `
-            <tr>
-                <td>${item.order_index || item.id}</td>
-                <td>${item.name}</td>
-                <td>${formatType(item.type)}</td>
-                <td>${item.target_path || '-'}</td>
-                <td>${item.list_name || (listId ? getCurrentCheckItemName() : '-')}</td>
-                <td>${item.description || '-'}</td>
-                <td>
-                    <button class="btn btn-primary btn-sm" onclick="window.checkitems.editCheckItem(${item.id})">编辑</button>
-                    <button class="btn btn-primary btn-sm" onclick="window.checkitems.cloneCheckItem(${item.id})">克隆</button>
-                    <button class="btn btn-danger btn-sm" onclick="window.checkitems.deleteCheckItem(${item.id})">删除</button>
-                </td>
-            </tr>
-        `).join('');
-    } catch (e) { console.error(e); }
-}
+        if (checkItems.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" class="empty-state">暂无数据</td></tr>';
+        } else {
+            tbody.innerHTML = checkItems.map(item => `
+                <tr>
+                    <td><input type="checkbox" name="checkItemIds" value="${item.id}" onchange="window.checkitems.updateBatchToolbar()"></td>
+                    <td>${item.name}</td>
+                    <td>${formatType(item.type)}</td>
+                    <td class="path-column">
+                        <div class="text-truncate-2" title="${item.target_path || ''}">${item.target_path || '-'}</div>
+                    </td>
+                    <td>${item.list_name || '-'}</td>
+                    <td style="max-width: 200px;">
+                        <div class="text-truncate-2" title="${item.description || ''}">${item.description || '-'}</div>
+                    </td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="window.checkitems.editCheckItem(${item.id})">编辑</button>
+                        <button class="btn btn-primary btn-sm" onclick="window.checkitems.cloneCheckItem(${item.id})">克隆</button>
+                        <button class="btn btn-danger btn-sm" onclick="window.checkitems.deleteCheckItem(${item.id})">删除</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
 
-// 获取当前检查项列表名称
-let currentCheckItemListId = '';
-let currentCheckItemListName = '';
+        // 每次加载重置全选框和批量按钮
+        const selectAll = document.getElementById('selectAllCheckItems');
+        if (selectAll) selectAll.checked = false;
+        updateBatchToolbar();
 
-function getCurrentCheckItemName() {
-    return currentCheckItemListName;
+        // 渲染分页
+        window.paginationManager.render(
+            'checkItemsPagination',
+            totalCount,
+            window.checkItemPagination.page,
+            window.checkItemPagination.size,
+            (newPage, newSize) => {
+                loadCheckItems(newPage, newSize);
+            }
+        );
+    } catch (e) { 
+        console.error(e);
+        const tbody = document.getElementById('checkItemTable');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="empty-state">加载失败，请刷新页面重试</td></tr>';
+    }
 }
 
 // 选择检查项列表
 function selectCheckItemList(listId) {
-    currentCheckItemListId = listId;
+    window.currentCheckItemListId = listId;
+    window.checkItemPagination.page = 1; // 切换列表重置页码
 
     // 更新选中状态
     document.querySelectorAll('#checkItemListTree .group-item').forEach(item => {
@@ -212,18 +278,17 @@ function selectCheckItemList(listId) {
         activeItem.classList.add('active');
         // 更新当前检查项列表名称
         const listName = activeItem.querySelector('span:not(.icon):not(.list-actions)').textContent;
-        currentCheckItemListName = listName === '全部检查项' ? '检查项管理' : listName;
-        document.getElementById('currentCheckItemListName').textContent = currentCheckItemListName;
+        const currentName = listName === '全部检查项' ? '检查项管理' : listName;
+        document.getElementById('currentCheckItemListName').textContent = currentName;
     }
 
     // 加载对应检查项
-    loadCheckItems(listId);
+    loadCheckItems();
 }
 
 // 编辑检查项
 async function editCheckItem(id) {
     try {
-        // 先加载列表选择器
         await loadCheckItemListSelect();
 
         const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/${id}`, { headers: window.shared.getHeaders() });
@@ -234,15 +299,12 @@ async function editCheckItem(id) {
         if (el('checkItemName')) el('checkItemName').value = item.name || '';
         if (el('checkItemDesc')) el('checkItemDesc').value = item.description || '';
         
-        // 设置所属列表
         if (el('checkItemListSelect')) {
             el('checkItemListSelect').value = item.list_id || '';
         }
 
-        // 解析 type 字段
         const types = parseItemType(item.type);
 
-        // 判断并设置检查项分类
         let category = '';
         if (types.includes('file_exists') || types.includes('file_mtime') || types.includes('file_size')
             || types.includes('file_owner') || types.includes('file_group') || types.includes('file_permissions')
@@ -256,10 +318,9 @@ async function editCheckItem(id) {
         
         if (el('checkItemCategory')) {
             el('checkItemCategory').value = category;
-            toggleCheckItemCategory(); // 切换分类显示的字段
+            toggleCheckItemCategory();
         }
 
-        // 根据分类填充特定字段
         if (category === 'file') {
             if (el('filePath')) el('filePath').value = item.target_path || '';
             if (el('checkFileMtime')) el('checkFileMtime').checked = types.includes('file_mtime');
@@ -294,6 +355,12 @@ async function editCheckItem(id) {
                 if (el('fileMd5CompareMode')) el('fileMd5CompareMode').value = item.check_attributes.md5.compare_mode || 'snapshot';
                 if (el('fileMd5Value')) el('fileMd5Value').value = item.check_attributes.md5.md5_value || '';
             }
+
+            if (el('isRecursive')) el('isRecursive').checked = !!item.check_attributes?.is_recursive;
+            if (el('excludePatterns')) {
+                const patterns = item.check_attributes?.exclude_patterns || [];
+                el('excludePatterns').value = Array.isArray(patterns) ? patterns.join('\n') : patterns;
+            }
         } else if (category === 'content') {
             if (el('contentFilePath')) el('contentFilePath').value = item.target_path || '';
             if (types.includes('file_content')) {
@@ -316,11 +383,9 @@ async function editCheckItem(id) {
             }
         }
 
-        // 调用同步显示切换
         toggleCheckItemFields();
         toggleContentCheckFields();
         toggleTextCompareFields();
-        // toggleKernelCompareFields() 和 toggleRouteCheckFields() 在必要时也可以调用
         
         if (el('checkItemModalTitle')) el('checkItemModalTitle').textContent = '编辑检查项';
         if (el('checkItemModal')) el('checkItemModal').classList.add('active');
@@ -346,12 +411,10 @@ async function deleteCheckItem(id) {
 function toggleCheckItemCategory() {
     const category = document.getElementById('checkItemCategory').value;
 
-    // 隐藏所有检查类型字段
     document.getElementById('fileCheckFields').style.display = 'none';
     document.getElementById('contentCheckFields').style.display = 'none';
     document.getElementById('routeCheckFields').style.display = 'none';
 
-    // 显示对应分类的字段
     if (category === 'file') {
         document.getElementById('fileCheckFields').style.display = 'block';
     } else if (category === 'content') {
@@ -363,51 +426,42 @@ function toggleCheckItemCategory() {
 
 // 文件/目录检查 - 各个属性的显示切换
 function toggleCheckItemFields() {
-    // 修改时间
     document.getElementById('fileMtimeFields').style.display =
         document.getElementById('checkFileMtime').checked ? 'block' : 'none';
-    // 大小
     document.getElementById('fileSizeFields').style.display =
         document.getElementById('checkFileSize').checked ? 'block' : 'none';
-    // 属主
     document.getElementById('fileOwnerFields').style.display =
         document.getElementById('checkFileOwner').checked ? 'block' : 'none';
-    // 属组
     document.getElementById('fileGroupFields').style.display =
         document.getElementById('checkFileGroup').checked ? 'block' : 'none';
-    // 权限
     document.getElementById('filePermissionsFields').style.display =
         document.getElementById('checkFilePermissions').checked ? 'block' : 'none';
-    // MD5
     document.getElementById('fileMd5Fields').style.display =
         document.getElementById('checkFileMd5').checked ? 'block' : 'none';
+    
+    const isRecursive = document.getElementById('isRecursive').checked;
+    document.getElementById('excludePatternsFields').style.display = isRecursive ? 'block' : 'none';
 
-    // 时间比较 - 显示范围设置
     const mtimeCompareMode = document.getElementById('fileMtimeCompareMode').value;
     document.getElementById('fileMtimeRangeFields').style.display =
         mtimeCompareMode === 'specified' ? 'flex' : 'none';
 
-    // 大小比较 - 显示范围设置
     const sizeCompareMode = document.getElementById('fileSizeCompareMode').value;
     document.getElementById('fileSizeRangeFields').style.display =
         sizeCompareMode === 'specified' ? 'flex' : 'none';
 
-    // 属主比较 - 显示指定值
     const ownerCompareMode = document.getElementById('fileOwnerCompareMode').value;
     document.getElementById('fileOwnerSpecifiedField').style.display =
         ownerCompareMode === 'specified' ? 'block' : 'none';
 
-    // 属组比较 - 显示指定值
     const groupCompareMode = document.getElementById('fileGroupCompareMode').value;
     document.getElementById('fileGroupSpecifiedField').style.display =
         groupCompareMode === 'specified' ? 'block' : 'none';
 
-    // 权限比较 - 显示指定值
     const permCompareMode = document.getElementById('filePermissionsCompareMode').value;
     document.getElementById('filePermissionsSpecifiedField').style.display =
         permCompareMode === 'specified' ? 'block' : 'none';
 
-    // MD5比较 - 显示指定值
     const md5CompareMode = document.getElementById('fileMd5CompareMode').value;
     document.getElementById('fileMd5SpecifiedField').style.display =
         md5CompareMode === 'specified' ? 'block' : 'none';
@@ -444,10 +498,8 @@ async function cloneCheckItemList(id) {
     try {
         const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists/${id}`, { headers: window.shared.getHeaders() });
         const list = await res.json();
-
         const newName = list.name + ' (复制)';
 
-        // 调用后端复制API
         const copyRes = await fetch(`${window.shared.API_BASE}/api/v1/check-items/lists/${id}/copy`, {
             method: 'POST',
             headers: window.shared.getHeaders(),
@@ -470,23 +522,18 @@ async function cloneCheckItemList(id) {
 // 克隆检查项
 async function cloneCheckItem(id) {
     try {
-        // 先加载列表选择器
         await loadCheckItemListSelect();
 
         const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items/${id}`, { headers: window.shared.getHeaders() });
         const item = await res.json();
 
-        // 打开模态框并预填信息（与编辑相同）
         document.getElementById('checkItemId').value = '';
         document.getElementById('checkItemName').value = `${item.name} (复制)`;
         document.getElementById('checkItemDesc').value = item.description || '';
-        // 设置所属列表
         document.getElementById('checkItemListSelect').value = item.list_id || '';
 
-        // 解析 type 字段
         const types = parseItemType(item.type);
 
-        // 判断检查项分类
         let category = '';
         if (types.includes('file_exists') || types.includes('file_mtime') || types.includes('file_size')
             || types.includes('file_owner') || types.includes('file_group') || types.includes('file_permissions')
@@ -500,7 +547,6 @@ async function cloneCheckItem(id) {
         document.getElementById('checkItemCategory').value = category;
         toggleCheckItemCategory();
 
-        // 根据分类填充字段
         if (category === 'file') {
             document.getElementById('filePath').value = item.target_path || '';
             document.getElementById('checkFileMtime').checked = types.includes('file_mtime');
@@ -535,6 +581,10 @@ async function cloneCheckItem(id) {
                 document.getElementById('fileMd5CompareMode').value = item.check_attributes.md5.compare_mode || 'snapshot';
                 document.getElementById('fileMd5Value').value = item.check_attributes.md5.md5_value || '';
             }
+
+            document.getElementById('isRecursive').checked = !!item.check_attributes?.is_recursive;
+            const patterns = item.check_attributes?.exclude_patterns || [];
+            document.getElementById('excludePatterns').value = Array.isArray(patterns) ? patterns.join('\n') : patterns;
         } else if (category === 'content') {
             document.getElementById('contentFilePath').value = item.target_path || '';
             if (types.includes('file_content')) {
@@ -571,6 +621,53 @@ async function cloneCheckItem(id) {
     }
 }
 
+// ========== 批量操作 ==========
+
+function toggleSelectAll(checked) {
+    document.querySelectorAll('input[name="checkItemIds"]').forEach(cb => {
+        cb.checked = checked;
+    });
+    updateBatchToolbar();
+}
+
+function updateBatchToolbar() {
+    const checked = document.querySelectorAll('input[name="checkItemIds"]:checked');
+    const btn = document.getElementById('checkItemBatchDelete');
+    if (btn) {
+        btn.style.display = checked.length > 0 ? 'inline-block' : 'none';
+        btn.textContent = `批量删除 (${checked.length})`;
+    }
+}
+
+async function batchDeleteCheckItems() {
+    const checked = document.querySelectorAll('input[name="checkItemIds"]:checked');
+    const ids = Array.from(checked).map(cb => parseInt(cb.value));
+    
+    if (ids.length === 0) return;
+    if (!confirm(`确定要删除选中的 ${ids.length} 个检查项吗？`)) return;
+
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/check-items`, {
+            method: 'DELETE',
+            headers: {
+                ...window.shared.getHeaders(),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ids })
+        });
+
+        if (res.ok) {
+            loadCheckItems();
+        } else {
+            const err = await res.json();
+            alert('删除失败: ' + (err.detail || '未知原因'));
+        }
+    } catch (e) {
+        console.error(e);
+        alert('删除请求失败');
+    }
+}
+
 // 导出模块
 window.checkitems = {
     parseItemType,
@@ -588,8 +685,14 @@ window.checkitems = {
     cloneCheckItemList,
     deleteCheckItemList,
     loadCheckItems,
+    searchCheckItems,
     loadCheckItemListSelect,
     editCheckItem,
     cloneCheckItem,
-    deleteCheckItem
+    deleteCheckItem,
+    toggleSelectAll,
+    updateBatchToolbar,
+    batchDeleteCheckItems
 };
+
+})();

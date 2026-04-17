@@ -1,6 +1,7 @@
 # 快照构建服务
 from datetime import datetime
 from typing import Optional, Dict, Any, List
+from app.utils.datetime_util import get_now
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -72,14 +73,14 @@ class SnapshotBuildService:
             })
 
         # 3. 生成快照名称（附加时间戳）
-        timestamp = datetime.utcnow().strftime("%Y%m%d%H%M")
+        timestamp = get_now().strftime("%Y%m%d%H%M")
         full_name = f"{snapshot_name}_{timestamp}"
 
         # 4. 创建快照记录
         snapshot = Snapshot(
             group_id=snapshot_group_id,
             name=full_name,
-            snapshot_time=datetime.utcnow(),
+            snapshot_time=get_now(),
             is_default=False,
         )
         self.db.add(snapshot)
@@ -94,7 +95,7 @@ class SnapshotBuildService:
             completed_groups=0,
             total_communications=total_communications,
             completed_communications=0,
-            start_time=datetime.utcnow(),
+            start_time=get_now(),
             build_config=build_config,
         )
         self.db.add(task)
@@ -208,7 +209,9 @@ class SnapshotBuildService:
                                 else:
                                     connection_error = "SSH 连接失败: 请检查通信机地址、端口、用户名和密码/密钥配置"
 
-                        # 采集数据
+                        # 采集数据并存入临时字典，后续批量写入文件
+                        instance_all_data = {}
+                        
                         for item in check_items:
                             item_dict = {
                                 "id": item.id,
@@ -219,24 +222,49 @@ class SnapshotBuildService:
                             }
 
                             if connection_error:
-                                # 连接失败时，记录错误信息
                                 result_data = {
                                     "_error": connection_error,
                                     "_status": "connection_failed"
                                 }
                             else:
-                                # 正常采集
-                                result = await execute_check(ssh_client, item_dict, None)
-                                result_data = result.actual_value or {}
+                                try:
+                                    result = await execute_check(ssh_client, item_dict, None)
+                                    result_data = result.actual_value or {}
+                                except Exception as e:
+                                    result_data = {
+                                        "_error": str(e),
+                                        "_status": "error"
+                                    }
 
-                            # 保存环境数据
+                            # 存入字典
+                            instance_all_data[str(item.id)] = result_data
+                            
+                            # 创建环境数据占位符（用于索引和结构完整）
                             env_data = EnvironmentData(
                                 snapshot_instance_id=instance.id,
                                 check_item_id=item.id,
-                                data_value=result_data,
+                                data_value=None, # 不再存入数据库
+                                has_file_data=True, # 标记数据在文件中
                             )
                             self.db.add(env_data)
 
+                        # --- 落地文件系统 ---
+                        import os
+                        import json
+                        # 确保目录存在
+                        base_dir = "instance_data/snapshots"
+                        os.makedirs(base_dir, exist_ok=True)
+                        
+                        # 文件名: snapshot_{id}_inst_{id}.json
+                        file_name = f"snapshot_{task.snapshot_id}_inst_{instance.id}.json"
+                        file_path = os.path.join(base_dir, file_name)
+                        
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            json.dump(instance_all_data, f, ensure_ascii=False)
+                        
+                        # 更新实例的路径
+                        instance.data_path = file_path
+                        
                         await self.db.commit()
                         comms_progress[idx]["status"] = "success" if not connection_error else "failed"
 
@@ -245,18 +273,33 @@ class SnapshotBuildService:
                         comms_progress[idx]["status"] = "failed"
                         group_success = False
 
-                        # 记录异常到环境数据
+                        # 记录异常
+                        error_data_map = {}
                         for item in check_items:
+                            error_data_map[str(item.id)] = {
+                                "_error": connection_error,
+                                "_status": "error",
+                                "_error_type": type(e).__name__
+                            }
                             env_data = EnvironmentData(
                                 snapshot_instance_id=instance.id,
                                 check_item_id=item.id,
-                                data_value={
-                                    "_error": connection_error,
-                                    "_status": "error",
-                                    "_error_type": type(e).__name__
-                                },
+                                data_value=None,
+                                has_file_data=True,
                             )
                             self.db.add(env_data)
+                        
+                        # 同样写入文件
+                        import os
+                        import json
+                        base_dir = "instance_data/snapshots"
+                        os.makedirs(base_dir, exist_ok=True)
+                        file_name = f"snapshot_{task.snapshot_id}_inst_{instance.id}.json"
+                        file_path = os.path.join(base_dir, file_name)
+                        with open(file_path, 'w', encoding='utf-8') as f:
+                            json.dump(error_data_map, f, ensure_ascii=False)
+                            
+                        instance.data_path = file_path
                         await self.db.commit()
 
                     finally:
@@ -292,7 +335,7 @@ class SnapshotBuildService:
             task.progress = 100
             task.completed_groups = completed_groups
             task.completed_communications = completed_comm
-            task.end_time = datetime.utcnow()
+            task.end_time = get_now()
             await self.db.commit()
 
             return task
@@ -300,7 +343,7 @@ class SnapshotBuildService:
         except Exception as e:
             task.status = "failed"
             task.error_message = str(e)
-            task.end_time = datetime.utcnow()
+            task.end_time = get_now()
             await self.db.commit()
             await self.progress_tracker.update_progress(
                 task_id, task.completed_communications, task.completed_groups,
@@ -320,7 +363,7 @@ class SnapshotBuildService:
 
         if task.status in ["pending", "running"]:
             task.status = "cancelled"
-            task.end_time = datetime.utcnow()
+            task.end_time = get_now()
             await self.db.commit()
             await self.progress_tracker.update_progress(
                 task_id, task.completed_communications, task.completed_groups,

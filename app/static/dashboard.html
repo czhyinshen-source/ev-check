@@ -12,27 +12,27 @@
         <h1>运行环境检查系统</h1>
         <div class="header-right">
             <span id="currentUser" style="margin-right: 15px;">用户: -</span>
-            <button class="logout-btn" onclick="logout()">退出登录</button>
+            <button class="logout-btn" onclick="window.auth.logout()">退出登录</button>
         </div>
     </div>
 
     <div class="container">
         <div class="stats">
             <div class="stat-card">
-                <h3>通信机数量</h3>
-                <div class="value" id="commCount">-</div>
+                <h3>检查任务总数</h3>
+                <div class="value" id="totalTasks">-</div>
             </div>
             <div class="stat-card">
-                <h3>检查项数量</h3>
-                <div class="value" id="checkItemCount">-</div>
+                <h3>今日检查成功</h3>
+                <div class="value success" id="todaySuccess">-</div>
             </div>
             <div class="stat-card">
-                <h3>快照数量</h3>
-                <div class="value" id="snapshotCount">-</div>
+                <h3>今日检查失败</h3>
+                <div class="value error" id="todayFailed">-</div>
             </div>
             <div class="stat-card">
-                <h3>最近检查</h3>
-                <div class="value success" id="lastCheckStatus">-</div>
+                <h3>今日待执行</h3>
+                <div class="value warning" id="todayPending">-</div>
             </div>
         </div>
         
@@ -43,6 +43,7 @@
             <div class="nav-tab" data-tab="checks">检查执行</div>
             <div class="nav-tab" data-tab="reports">任务监控与报表中心</div>
             <div class="nav-tab" data-tab="ssh-keys">SSH 密钥</div>
+            <div class="nav-tab" data-tab="users" id="nav-users" style="display: none;">用户管理</div>
         </div>
         
         <div class="tab-content active" id="communications">
@@ -96,6 +97,7 @@
                             </thead>
                             <tbody id="commTable"></tbody>
                         </table>
+                        <div id="commPagination"></div>
                     </div>
                 </div>
             </div>
@@ -123,24 +125,29 @@
                         <div class="section-header">
                             <h2 id="currentCheckItemListName">检查项管理</h2>
                             <div class="action-bar">
+                                <input type="text" id="checkItemSearch" placeholder="搜索检查项..." class="form-control" style="width: 250px;" oninput="window.checkitems.searchCheckItems()">
                                 <button class="btn btn-primary" onclick="window.checkitems.openCheckItemModal()">+ 新增检查项</button>
+                                <button class="btn btn-danger" id="checkItemBatchDelete" style="display: none;" onclick="window.checkitems.batchDeleteCheckItems()">批量删除</button>
                                 <button class="btn btn-success" onclick="window.checkitems.loadCheckItems()">刷新</button>
                             </div>
                         </div>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>序号</th>
-                                    <th>名称</th>
-                                    <th>类型</th>
-                                    <th>目标路径</th>
-                                    <th>所属列表</th>
-                                    <th>描述</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="checkItemTable"></tbody>
-                        </table>
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th style="width: 40px;"><input type="checkbox" id="selectAllCheckItems" onchange="window.checkitems.toggleSelectAll(this.checked)"></th>
+                                        <th>名称</th>
+                                        <th>类型</th>
+                                        <th>目标路径</th>
+                                        <th>所属列表</th>
+                                        <th>描述</th>
+                                        <th>操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="checkItemTable"></tbody>
+                            </table>
+                        </div>
+                        <div id="checkItemsPagination"></div>
                     </div>
                 </div>
             </div>
@@ -171,7 +178,7 @@
                             <div class="action-bar">
                                 <input type="text" class="search-box" id="snapshotSearch" placeholder="按名称搜索..." oninput="window.snapshots.searchSnapshots()">
                                 <button class="btn btn-success" onclick="window.snapshots.openSnapshotBuildModal()">+ 构建快照</button>
-                                <button class="btn btn-default" onclick="window.snapshots.loadSnapshots()">刷新</button>
+                                <button class="btn btn-default" onclick="window.snapshots.refreshSnapshots()">刷新</button>
                             </div>
                         </div>
                         <table>
@@ -188,6 +195,7 @@
                             </thead>
                             <tbody id="snapshotTable"></tbody>
                         </table>
+                        <div id="snapshotsPagination"></div>
                     </div>
                 </div>
             </div>
@@ -200,7 +208,6 @@
                     <div class="sidebar-header">
                         <h3>检查规则</h3>
                         <div class="sidebar-actions">
-                            <button class="btn-icon" onclick="window.checks.loadCheckRules()" title="刷新">🔄</button>
                             <button class="btn btn-primary btn-sm" onclick="window.checks.createNewRule()">+ 新增</button>
                         </div>
                     </div>
@@ -251,35 +258,13 @@
                                     <textarea id="ruleDescription" rows="2" placeholder="简要描述此规则的检查目标..."></textarea>
                                 </div>
 
-                                <div class="relations-grid">
-                                    <!-- 资产关联：快照 (Moved to first) -->
-                                    <div class="asset-selector-card" onclick="window.checks.openAssetDrawer('snapshot')">
-                                        <div class="card-header">
-                                            <span class="icon">📸</span>
-                                            <h4>对比基准</h4>
-                                            <span class="edit-pill">优先选择</span>
-                                        </div>
-                                        <div class="asset-summary" id="snapshotSummary">自动对齐最新</div>
+                                <div class="execution-targets-section">
+                                    <div class="execution-targets-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                        <h3 style="font-size: 14px; margin: 0; color: var(--text-secondary);">执行基准拆分行</h3>
+                                        <button type="button" class="btn btn-sm btn-outline" onclick="window.checks.addExecutionTarget()">+ 添加对比基准行</button>
                                     </div>
-
-                                    <!-- 资产关联：通信机 -->
-                                    <div class="asset-selector-card" onclick="window.checks.openAssetDrawer('communication')">
-                                        <div class="card-header">
-                                            <span class="icon">🖥️</span>
-                                            <h4>目标通信机</h4>
-                                            <span class="edit-pill">配置</span>
-                                        </div>
-                                        <div class="asset-summary" id="commSummary">未配置</div>
-                                    </div>
-
-                                    <!-- 资产关联：检查项 -->
-                                    <div class="asset-selector-card" onclick="window.checks.openAssetDrawer('checkItem')">
-                                        <div class="card-header">
-                                            <span class="icon">🔍</span>
-                                            <h4>检查项集合</h4>
-                                            <span class="edit-pill">配置</span>
-                                        </div>
-                                        <div class="asset-summary" id="itemSummary">未配置</div>
+                                    <div id="executionTargetsContainer" class="execution-targets-container">
+                                        <!-- JS 动态渲染的行 -->
                                     </div>
                                 </div>
 
@@ -311,13 +296,40 @@
                             </div>
                         </div>
                         <div class="drawer-footer">
-                            <span id="selectedCount">已选 0 项</span>
+                            <span id="drawerSelectedCount">已选 0 项</span>
                             <button class="btn btn-primary" onclick="window.checks.closeAssetDrawer()">确定</button>
                         </div>
                     </div>
                 </div>
                 
+                <!-- 右侧：执行监控面板 (Task Console) -->
+                <div class="result-panel">
+                    <div class="panel-header">
+                        <div style="font-size: 13px; font-weight: 600; color: var(--accent);">控制台 & 执行历史</div>
+                        <button class="btn-icon" title="强制刷新" onclick="window.checks.selectRule(currentRuleId)">🔄</button>
+                    </div>
+                    <div class="panel-content">
+                        <!-- 选项卡切换 -->
+                        <div class="history-tabs">
+                            <button class="tab-btn active" data-view="progressView" onclick="window.checks.switchConsoleTab(this)">实时监控</button>
+                            <button class="tab-btn" data-view="historyView" onclick="window.checks.switchConsoleTab(this)">执行轨迹</button>
+                        </div>
 
+                        <!-- 实时监控视图 -->
+                        <div id="progressView" class="tab-view active">
+                            <div id="currentTasksList" class="execution-list">
+                                <div class="empty-state">未发现正在运行的任务</div>
+                            </div>
+                        </div>
+
+                        <!-- 执行轨迹视图 -->
+                        <div id="historyView" class="tab-view">
+                            <div id="taskHistoryList" class="execution-list">
+                                <div class="empty-state">暂无历史执行记录</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -325,13 +337,15 @@
             <div class="section">
                 <div class="action-bar">
                     <input type="text" class="search-box" id="reportSearch" placeholder="搜索检查结果..." oninput="searchReports()">
+                    <button class="btn btn-danger" id="batchDeleteReportsBtn" style="display: none;" onclick="window.reports.batchDeleteReports()">批量删除</button>
                     <button class="btn btn-success" onclick="loadReports()">刷新</button>
                     <button class="btn btn-primary" onclick="exportReport()">导出报表</button>
                 </div>
                 <table>
                     <thead>
                         <tr>
-                            <th onclick="toggleSort()" style="cursor:pointer; user-select:none;">ID/报表名称 <span id="sortIcon">▼</span></th>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAllReports" onchange="window.reports.toggleSelectAllReports(event)"></th>
+                            <th onclick="toggleSort('id')" style="cursor:pointer; user-select:none;">报表名称 <span id="sortIcon">▼</span></th>
                             <th>关联规则</th>
                             <th>触发方式</th>
                             <th>执行进度</th>
@@ -343,6 +357,7 @@
                     </thead>
                     <tbody id="reportTable"></tbody>
                 </table>
+                <div id="reportsPagination"></div>
             </div>
         </div>
         
@@ -365,6 +380,40 @@
                     </thead>
                     <tbody id="sshKeyTable"></tbody>
                 </table>
+            </div>
+        </div>
+
+        <div class="tab-content" id="users">
+            <div class="section">
+                <div class="section-header">
+                    <h2>用户管理中心</h2>
+                    <div class="stats-mini">
+                        <span>总用户: <strong id="userTotalCount">0</strong></span>
+                        <span style="margin-left: 15px;">待审核: <strong id="userPendingCount" style="color: #f59e0b;">0</strong></span>
+                    </div>
+                </div>
+                
+                <div class="action-bar">
+                    <button class="btn btn-success" onclick="window.users.loadUsers()">刷新列表</button>
+                    <small style="color: var(--text-dim); margin-left: 10px;">注：新注册用户默认为未激活状态，需管理员手动点击“激活”方可登录。</small>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>用户名</th>
+                                <th>角色</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="userTable">
+                            <!-- 由 users.js 动态渲染 -->
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -656,6 +705,19 @@
                     <div class="form-group">
                         <label>文件/目录路径 *</label>
                         <input type="text" id="filePath" placeholder="/etc/hosts 或 /var/log/">
+                    </div>
+
+                    <!-- 递归遍历选项 -->
+                    <div class="form-group">
+                        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="isRecursive" onchange="window.checkitems.toggleCheckItemFields()">
+                            <span style="font-weight: 500;">递归遍历检查目录下所有项</span>
+                        </label>
+                    </div>
+
+                    <div id="excludePatternsFields" class="form-group" style="display:none; margin-top: -5px; padding-left: 24px; border-left: 2px solid var(--accent-blue);">
+                        <label style="font-size: 12px; color: var(--text-secondary);">排除规则 (每行一个 Glob，例如 logs/**)</label>
+                        <textarea id="excludePatterns" rows="2" placeholder="logs/**&#10;*.bak" style="font-family: 'JetBrains Mono', monospace; font-size: 12px; margin-top: 5px;"></textarea>
                     </div>
 
                     <div class="form-group">
@@ -964,9 +1026,13 @@
                     <select id="buildSnapshotGroup" required></select>
                 </div>
                 <div class="form-group">
-                    <label>选择检查项列表与目标资产</label>
-                    <p class="build-hint">点击列表卡片展示资产树，选择该列表要采集的目标通信机/组：</p>
-                    <div id="commGroupTree" class="build-tree-container"></div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <label style="margin: 0; font-weight: 600;">选择检查项列表与目标资产</label>
+                        <button type="button" class="btn btn-sm btn-outline" onclick="window.snapshots.addBuildRow()">+ 添加配置行</button>
+                    </div>
+                    <div id="buildRowsContainer" class="execution-targets-container">
+                        <!-- 动态渲染的配置行 -->
+                    </div>
                 </div>
                 <div id="buildSelectionCount" class="build-selection-summary">总计选择: 0 次采集任务</div>
                 <div style="display:flex; gap:10px; margin-top:20px;">
@@ -1033,6 +1099,28 @@
         </div>
     </div>
 
+    <!-- 弹窗：重置密码 -->
+    <div id="resetPasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>强制重置用户密码</h3>
+                <span class="close" onclick="closeModal('resetPasswordModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p>正在为用户 <strong id="resetTargetUser">-</strong> 设置新密码</p>
+                <div class="form-group" style="margin-top: 15px;">
+                    <label>新密码</label>
+                    <input type="password" id="newAdminPassword" class="form-control" placeholder="请输入 6 位以上新密码">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeModal('resetPasswordModal')">取消</button>
+                <button class="btn btn-primary" id="confirmResetBtn">确认重置</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/components/pagination.js"></script>
     <script src="/static/js/shared.js?v=8"></script>
     <script src="/static/js/dom-utils.js?v=8"></script>
     <script src="/static/js/auth.js?v=8"></script>
@@ -1046,11 +1134,12 @@
                 '/static/js/communications.js?v=18',
                 '/static/js/file-formatter.js',
                 '/static/js/checkitems.js?v=17',
-                '/static/js/snapshots.js?v=18',
+                '/static/js/snapshots.js?v=19',
                 '/static/js/reports.js',
                 '/static/js/checks.js',
                 '/static/js/ssh-keys.js?v=1',
-                '/static/js/dashboard.js?v=16'
+                '/static/js/users.js',
+                '/static/js/dashboard.js?v=17'
             ];
 
             let loadedCount = 0;

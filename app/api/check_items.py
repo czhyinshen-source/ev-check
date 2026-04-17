@@ -1,7 +1,7 @@
 # 检查项 API
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Response
 from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,23 +18,46 @@ from app.schemas.check_item import (
     CheckItemListResponse,
     CheckItemListUpdate,
 )
+from app.services.rule_validator import ensure_not_in_execution_targets
 
 router = APIRouter()
 
 
 @router.get("", response_model=List[CheckItemResponse])
 async def list_check_items(
+    response: Response,
     list_id: Optional[int] = None,
-    skip: int = 0,
-    limit: int = 100,
+    q: Optional[str] = None,
+    page: int = 1,
+    size: int = 20,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """获取检查项列表"""
-    query = select(CheckItem).offset(skip).limit(limit)
+    skip = (page - 1) * size
+    limit = size
+
+    # 基本查询
+    query = select(CheckItem)
     if list_id:
         query = query.where(CheckItem.list_id == list_id)
+    
+    # 搜索过滤
+    if q:
+        search_query = f"%{q}%"
+        query = query.where(
+            (CheckItem.name.ilike(search_query)) | 
+            (CheckItem.target_path.ilike(search_query))
+        )
+
+    # 计算总数
+    count_query = select(func.count()).select_from(query.subquery())
+    total_count_res = await db.execute(count_query)
+    total_count = total_count_res.scalar() or 0
+
+    # 分页与排序
     query = query.order_by(CheckItem.list_id, CheckItem.order_index)
+    query = query.offset(skip).limit(limit)
 
     result = await db.execute(query)
     items = result.scalars().all()
@@ -65,6 +88,9 @@ async def list_check_items(
             "updated_at": item.updated_at,
         }
         responses.append(CheckItemResponse(**item_dict))
+
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count"
 
     return responses
 
@@ -261,6 +287,7 @@ async def delete_check_item_list(
     if not item_list:
         raise HTTPException(status_code=404, detail="检查项列表不存在")
 
+    await ensure_not_in_execution_targets(db, "check_item_list_id", list_id, f"检查项集合 {item_list.name}")
     await db.delete(item_list)
     await db.commit()
 
@@ -409,6 +436,31 @@ async def update_check_item(
     )
 
 
+class BatchDeleteRequest(BaseModel):
+    """批量删除请求"""
+    ids: List[int]
+
+
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+async def batch_delete_check_items(
+    data: BatchDeleteRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    """批量删除检查项"""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="未指定检查项")
+
+    result = await db.execute(select(CheckItem).where(CheckItem.id.in_(data.ids)))
+    items = result.scalars().all()
+
+    for item in items:
+        await ensure_not_in_execution_targets(db, "check_item_id", item.id, f"检查项 {item.name}")
+        await db.delete(item)
+
+    await db.commit()
+
+
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_check_item(
     item_id: int,
@@ -421,5 +473,6 @@ async def delete_check_item(
     if not item:
         raise HTTPException(status_code=404, detail="检查项不存在")
 
+    await ensure_not_in_execution_targets(db, "check_item_id", item_id, f"检查项 {item.name}")
     await db.delete(item)
     await db.commit()

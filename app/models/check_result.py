@@ -8,34 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
-class CheckRuleSnapshot(Base):
-    """规则 快照/快照组关联"""
-    __tablename__ = "check_rule_snapshots"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rule_id: Mapped[int] = mapped_column(ForeignKey("check_rules.id", ondelete="CASCADE"), nullable=False)
-    snapshot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=True)
-    snapshot_group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("snapshot_groups.id", ondelete="CASCADE"), nullable=True)
-
-class CheckRuleCheckItem(Base):
-    """规则 检查项/检查项列表关联"""
-    __tablename__ = "check_rule_check_items"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rule_id: Mapped[int] = mapped_column(ForeignKey("check_rules.id", ondelete="CASCADE"), nullable=False)
-    check_item_id: Mapped[Optional[int]] = mapped_column(ForeignKey("check_items.id", ondelete="CASCADE"), nullable=True)
-    check_item_list_id: Mapped[Optional[int]] = mapped_column(ForeignKey("check_item_lists.id", ondelete="CASCADE"), nullable=True)
-
-class CheckRuleCommunication(Base):
-    """规则 通信机/通信机组关联"""
-    __tablename__ = "check_rule_communications"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    rule_id: Mapped[int] = mapped_column(ForeignKey("check_rules.id", ondelete="CASCADE"), nullable=False)
-    communication_id: Mapped[Optional[int]] = mapped_column(ForeignKey("communications.id", ondelete="CASCADE"), nullable=True)
-    communication_group_id: Mapped[Optional[int]] = mapped_column(ForeignKey("communication_groups.id", ondelete="CASCADE"), nullable=True)
-
-
 class CheckRule(Base):
     """检查规则"""
     __tablename__ = "check_rules"
@@ -49,12 +21,9 @@ class CheckRule(Base):
     time_window_start: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
     time_window_end: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
     time_window_weekdays: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    execution_targets: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
-
-    snapshot_links: Mapped[list["CheckRuleSnapshot"]] = relationship("CheckRuleSnapshot", cascade="all, delete-orphan")
-    check_item_links: Mapped[list["CheckRuleCheckItem"]] = relationship("CheckRuleCheckItem", cascade="all, delete-orphan")
-    communication_links: Mapped[list["CheckRuleCommunication"]] = relationship("CheckRuleCommunication", cascade="all, delete-orphan")
 
     check_results: Mapped[list["CheckResult"]] = relationship(
         "CheckResult",
@@ -84,7 +53,7 @@ class CheckReport(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     trigger_type: Mapped[str] = mapped_column(String(20), default="manual")
-    status: Mapped[str] = mapped_column(String(20), default="pending")
+    status: Mapped[str] = mapped_column(String(50), default="pending")
     total_nodes: Mapped[int] = mapped_column(Integer, default=0)
     completed_nodes: Mapped[int] = mapped_column(Integer, default=0)
     success_nodes: Mapped[int] = mapped_column(Integer, default=0)
@@ -121,7 +90,7 @@ class CheckResult(Base):
         ForeignKey("communications.id", ondelete="SET NULL"),
         nullable=True
     )
-    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), nullable=False)
     start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     progress: Mapped[int] = mapped_column(Integer, default=0)

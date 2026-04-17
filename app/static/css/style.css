@@ -374,6 +374,24 @@ td {
 }
 tr:hover td { background: rgba(71, 85, 105, 0.2); }
 
+/* 表格列截断样式 */
+.path-column {
+    max-width: 400px;
+    min-width: 200px;
+}
+
+.text-truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: normal;
+    word-break: break-all;
+    line-height: 1.5;
+}
+
+
 .status-badge {
     display: inline-flex;
     align-items: center;
@@ -489,6 +507,10 @@ tr:hover td { background: rgba(71, 85, 105, 0.2); }
     color: var(--text-primary);
     font-family: 'JetBrains Mono', monospace;
     transition: all var(--transition-fast);
+}
+.form-group input[type="checkbox"], .form-group input[type="radio"] {
+    width: auto;
+    margin-right: 8px;
 }
 .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
     outline: none;
@@ -1537,6 +1559,8 @@ select {
     overflow: hidden;
     padding: 16px;
     background: var(--bg-deepest);
+    display: flex;
+    flex-direction: column;
 }
 
 /* 进度矩阵 (Node Progress Grid) */
@@ -1585,6 +1609,7 @@ select {
     display: none;
     width: 100%;
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
 }
 
@@ -1903,3 +1928,42 @@ select {
 .text-danger { color: #ef4444; }
 .bg-success-subtle { background: rgba(16, 185, 129, 0.1); padding: 2px 6px; border-radius: 4px; }
 .bg-danger-subtle { background: rgba(239, 68, 68, 0.1); padding: 2px 6px; border-radius: 4px; }
+
+/* 批量部署公钥列表样式 */
+#commCheckboxList {
+    background: rgba(15, 23, 42, 0.4);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 4px;
+    padding: 12px;
+    max-height: 200px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+#commCheckboxList label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.2s;
+    width: 100%;
+    margin-bottom: 0 !important; /* 覆盖全局 label margin */
+    text-transform: none !important; /* 覆盖全局 uppercase */
+    letter-spacing: normal !important;
+    font-size: 13px !important;
+    color: var(--text-normal) !important;
+}
+
+#commCheckboxList label:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+#commCheckboxList input[type="checkbox"] {
+    width: 16px !important;
+    height: 16px !important;
+    margin: 0 !important;
+}

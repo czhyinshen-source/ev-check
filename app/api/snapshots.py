@@ -1,9 +1,10 @@
 # 快照管理 API
 from datetime import datetime
 from typing import List, Optional
+from app.utils.datetime_util import get_now
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, status, Response
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -14,6 +15,7 @@ from app.models.check_result import CheckRule
 from app.models.snapshot import SnapshotBuildTask
 from app.api.users import get_current_active_user
 from app.utils.ssh_client import SSHClientWrapper
+from app.services.rule_validator import ensure_not_in_execution_targets
 from app.schemas.snapshot_build import (
     StartBuildRequest,
     StartBuildResponse,
@@ -111,9 +113,16 @@ async def create_snapshot_group(
         is_system=group.get("is_system", False),
         description=group.get("description"),
     )
-    db.add(db_group)
-    await db.commit()
-    await db.refresh(db_group)
+    try:
+        db.add(db_group)
+        await db.commit()
+        await db.refresh(db_group)
+    except Exception as e:
+        await db.rollback()
+        # 处理唯一约束冲突
+        if "UNIQUE constraint failed" in str(e) or "Duplicate entry" in str(e) or "already exists" in str(e).lower():
+            raise HTTPException(status_code=400, detail=f"快照组名称 '{db_group.name}' 已存在")
+        raise e
     return {"id": db_group.id, "name": db_group.name}
 
 
@@ -195,6 +204,8 @@ async def delete_snapshot_group(
     # 检查是否有快照
     if group.snapshots:
         raise HTTPException(status_code=400, detail="请先删除或迁移快照")
+        
+    await ensure_not_in_execution_targets(db, "snapshot_group_id", group_id, f"快照组 {group.name}")
 
     await db.delete(group)
     await db.commit()
@@ -202,17 +213,39 @@ async def delete_snapshot_group(
 
 @router.get("", response_model=List[dict])
 async def list_snapshots(
+    response: Response,
     group_id: int = None,
-    skip: int = 0,
-    limit: int = 100,
+    q: Optional[str] = None,
+    page: int = 1,
+    size: int = 20,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
     """获取快照列表"""
+    # 计算分页
+    skip = (page - 1) * size
+    limit = size
+
+    # 构建基础查询
     query = select(Snapshot)
+    count_query = select(func.count(Snapshot.id))
+
+    # 应用筛选条件
     if group_id:
         query = query.where(Snapshot.group_id == group_id)
-    query = query.offset(skip).limit(limit)
+        count_query = count_query.where(Snapshot.group_id == group_id)
+    
+    if q:
+        query = query.where(Snapshot.name.ilike(f"%{q}%"))
+        count_query = count_query.where(Snapshot.name.ilike(f"%{q}%"))
+
+    # 获取总数
+    total_count = await db.scalar(count_query)
+    response.headers["X-Total-Count"] = str(total_count)
+    response.headers["Access-Control-Expose-Headers"] = "X-Total-Count"
+
+    # 执行分页查询
+    query = query.order_by(Snapshot.id.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     snapshots = result.scalars().all()
 
@@ -237,11 +270,11 @@ async def list_snapshots(
             "id": s.id,
             "group_id": s.group_id,
             "name": s.name,
-            "snapshot_time": s.snapshot_time.isoformat(),
+            "snapshot_time": s.snapshot_time.isoformat() if s.snapshot_time else None,
             "is_default": s.is_default,
             "description": s.description,
-            "created_at": s.created_at.isoformat(),
-            "updated_at": s.updated_at.isoformat(),
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
             "build_status": {
                 "status": latest_tasks[s.id].status,
                 "progress": latest_tasks[s.id].progress,
@@ -266,7 +299,7 @@ async def create_snapshot(
     if isinstance(snapshot_time, str):
         snapshot_time = datetime.fromisoformat(snapshot_time)
     else:
-        snapshot_time = datetime.utcnow()
+        snapshot_time = get_now()
 
     db_snapshot = Snapshot(
         group_id=snapshot["group_id"],
@@ -321,6 +354,18 @@ async def get_snapshot_instance(
         select(EnvironmentData).where(EnvironmentData.snapshot_instance_id == instance_id)
     )
     env_data_list = result.scalars().all()
+    
+    # 如果有文件数据，一次性加载文件内容
+    file_data = {}
+    if instance.data_path:
+        import os
+        import json
+        if os.path.exists(instance.data_path):
+            try:
+                with open(instance.data_path, 'r', encoding='utf-8') as f:
+                    file_data = json.load(f)
+            except Exception as e:
+                print(f"加载快照文件失败: {e}")
 
     return {
         "id": instance.id,
@@ -330,7 +375,7 @@ async def get_snapshot_instance(
         "environment_data": [
             {
                 "check_item_id": ed.check_item_id,
-                "data_value": ed.data_value,
+                "data_value": file_data.get(str(ed.check_item_id)) if ed.has_file_data else ed.data_value,
                 "checksum": ed.checksum,
                 "created_at": ed.created_at.isoformat(),
             }
@@ -417,6 +462,7 @@ async def get_snapshot_full_details(
     # 4. 按检查项聚合数据
     items_map = {}
     unique_check_item_ids = set()
+    instance_files_cache = {} # 缓存已加载的实例文件内容: {instance_id: json_data}
 
     for inst in instances:
         comm_info = {
@@ -425,6 +471,20 @@ async def get_snapshot_full_details(
             "ip": inst.communication.ip_address
         }
         
+        # 预加载该实例的文件内容 (如果需要)
+        if inst.data_path and inst.id not in instance_files_cache:
+            import os
+            import json
+            if os.path.exists(inst.data_path):
+                try:
+                    with open(inst.data_path, 'r', encoding='utf-8') as f:
+                        instance_files_cache[inst.id] = json.load(f)
+                except Exception as e:
+                    print(f"聚合过程中加载文件失败 {inst.data_path}: {e}")
+                    instance_files_cache[inst.id] = {}
+            else:
+                instance_files_cache[inst.id] = {}
+
         for data in inst.environment_data:
             item = data.check_item
             if not item:
@@ -442,8 +502,12 @@ async def get_snapshot_full_details(
                     "hosts_data": []
                 }
             
-            # 智能提取核心内容
+            # 获取数据值: 优先从文件缓存读取，其次数据库
             raw_val = data.data_value
+            if data.has_file_data:
+                cached_data = instance_files_cache.get(inst.id, {})
+                raw_val = cached_data.get(str(item.id))
+
             extracted_val = raw_val
             
             # 对于文件类检查项，保留完整的元数据字典不做提取
@@ -490,6 +554,8 @@ async def delete_snapshot(
     snapshot = result.scalar_one_or_none()
     if not snapshot:
         raise HTTPException(status_code=404, detail="快照不存在")
+        
+    await ensure_not_in_execution_targets(db, "snapshot_id", snapshot_id, f"快照 {snapshot.name}")
 
     await db.delete(snapshot)
     await db.commit()

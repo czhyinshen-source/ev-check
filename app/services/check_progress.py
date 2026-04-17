@@ -1,4 +1,4 @@
-# 检查执行进度追踪
+import asyncio
 import json
 from typing import Optional
 
@@ -17,15 +17,33 @@ class CheckProgressTracker:
 
     def __init__(self):
         self._redis: Optional[redis.Redis] = None
+        self._loop = None
 
     async def _get_redis(self) -> redis.Redis:
-        """获取 Redis 连接"""
-        if self._redis is None:
-            self._redis = redis.from_url(
+        """获取 Redis 连接 (线程/循环安全)"""
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # 如果不在运行的事件循环中，创建一个临时的
+            return redis.from_url(
                 settings.REDIS_URL,
                 encoding="utf-8",
                 decode_responses=True
             )
+
+        if self._redis is not None:
+            if self._loop != current_loop:
+                self._redis = None
+        
+        if self._redis is None:
+            self._redis = redis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+                socket_connect_timeout=3,
+                socket_timeout=3,
+            )
+            self._loop = current_loop
         return self._redis
 
     def _key(self, result_id: int, suffix: str = "") -> str:

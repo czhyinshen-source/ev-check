@@ -1,6 +1,7 @@
 # 定时任务
 from datetime import datetime
 from typing import Optional
+from app.utils.datetime_util import get_now
 
 from celery import Task
 from celery.schedules import crontab
@@ -51,7 +52,7 @@ def execute_scheduled_check(self, task_id: int):
             # 委托给 batch_check_task 去创建报告并分发 celery 任务
             execute_batch_check_task.delay(rule.id)
             
-            scheduled_task.last_run_at = datetime.utcnow()
+            scheduled_task.last_run_at = get_now()
             await db.commit()
             
         await local_engine.dispose()
@@ -168,7 +169,7 @@ def check_communication_statuses():
                         comm.connection_status = 'online' if connected else 'offline'
                         await db.commit()
                 except Exception as e:
-                    print(f"检查通信机 {comm.name} 状态时出错: {str(e)}")
+                    logger.error(f"检查通信机 {comm.name} 状态时出错: {str(e)}")
                     # 检查connection_status属性是否存在
                     if hasattr(comm, 'connection_status'):
                         comm.connection_status = 'offline'
@@ -181,10 +182,50 @@ def check_communication_statuses():
     return asyncio.run(_check())
 
 
+from celery.utils.log import get_task_logger
+
+logger = get_task_logger(__name__)
+
 # 配置定时任务
-celery_app.conf.beat_schedule.update({
-    'check-communication-statuses': {
-        'task': 'app.tasks.scheduled_tasks.check_communication_statuses',
-        'schedule': crontab(minute='*/1'),  # 每分钟执行一次
-    },
-})
+@celery_app.on_after_finalize.connect
+def setup_periodic_tasks(sender, **kwargs):
+    """应用启动时，从数据库加载所有激活的检查规则定时配置到 Celery Beat 调度器中"""
+    logger.info("🔖 正在从数据库同步规则定时配置至 Celery Beat...")
+    
+    # 静态任务：检查通信机状态
+    sender.add_periodic_task(
+        crontab(minute='*/1'),
+        check_communication_statuses.s(),
+        name='check-communication-statuses'
+    )
+    
+    from app.config import settings
+    from sqlalchemy import create_engine, text
+    
+    try:
+        # 使用同步引擎直接读取规则表中的 cron 配置
+        sync_url = settings.DATABASE_URL.replace("aiomysql", "pymysql").replace("aiosqlite", "")
+        engine = create_engine(sync_url)
+        with engine.connect() as conn:
+            query = text("SELECT id, name, cron_expression FROM check_rules WHERE is_active = 1 AND cron_expression IS NOT NULL")
+            result = conn.execute(query)
+            for row in result:
+                rule_id, rule_name, cron_expr = row
+                try:
+                    # 容错处理：确保 cron 表达式不为空且有效
+                    if not cron_expr or len(cron_expr.split()) != 5:
+                        continue
+                        
+                    schedule = crontab(**parse_cron_expression(cron_expr))
+                    # 动态注册任务，直接调用执行规则的任务
+                    from app.tasks.check_tasks import execute_batch_check_task
+                    sender.add_periodic_task(
+                        schedule,
+                        execute_batch_check_task.s(rule_id=rule_id), # 直接传 rule_id 给执行任务
+                        name=f"rule_schedule_{rule_id}"
+                    )
+                    logger.info(f"✅ 已加载规则定时: {rule_name} (ID={rule_id}), Cron='{cron_expr}'")
+                except Exception as e:
+                    logger.error(f"❌ 解析规则 {rule_name} 的 Cron 失败: {e}")
+    except Exception as e:
+        logger.error(f"⚠️ 同步数据库任务失败: {e}")

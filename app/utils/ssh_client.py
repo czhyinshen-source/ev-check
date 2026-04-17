@@ -139,8 +139,11 @@ class SSHClientWrapper:
             return False
 
     async def get_file_info(self, path: str) -> Optional[dict]:
-        """获取文件信息"""
-        command = f"stat -c '%a %U %G %s %Y' {path} 2>/dev/null || stat -f '%A %Su %Sg %z %m' {path} 2>/dev/null"
+        """获取文件信息 (兼容 Linux/Mac)"""
+        # Linux 用 stat -c, Mac 用 stat -f
+        # 权限统一使用八进制: Linux %a, Mac %Lp
+        # 使用单引号包裹路径以支持空格
+        command = f"stat -c '%a %U %G %s %Y' '{path}' 2>/dev/null || stat -f '%Lp %Su %Sg %z %m' '{path}' 2>/dev/null"
         exit_code, stdout, stderr = await self.execute(command)
 
         if exit_code != 0:
@@ -169,30 +172,46 @@ class SSHClientWrapper:
         return stdout.strip().split()[0] if stdout.strip() else None
 
     async def get_disk_usage(self, path: str = "/") -> Optional[dict]:
-        """获取磁盘使用情况"""
-        command = f"df -B1 {path} | tail -1"
+        """获取磁盘使用情况 (兼容 Linux/Mac)"""
+        # 尝试 Linux 风格 (-B1 为 1-byte blocks)
+        command = f"df -B1 {path} 2>/dev/null | tail -1"
         exit_code, stdout, stderr = await self.execute(command)
-
-        if exit_code != 0:
-            return None
-
+        
         parts = stdout.split()
-        if len(parts) < 6:
-            return None
-
-        return {
-            "total": int(parts[1]),
-            "used": int(parts[2]),
-            "available": int(parts[3]),
-            "use_percent": parts[4],
-            "mounted_on": parts[5],
-        }
+        if exit_code == 0 and len(parts) >= 6 and parts[1].isdigit():
+            return {
+                "total": int(parts[1]),
+                "used": int(parts[2]),
+                "available": int(parts[3]),
+                "use_percent": parts[4],
+                "mounted_on": parts[5],
+            }
+            
+        # 尝试 Mac 风格 (-k 并手动转换为 bytes)
+        command = f"df -k {path} 2>/dev/null | tail -1"
+        exit_code, stdout, stderr = await self.execute(command)
+        parts = stdout.split()
+        if exit_code == 0 and len(parts) >= 9:
+            # Mac 格式: Filesystem 1024-blocks Used Available Capacity iused ifree %iused Mounted on
+            try:
+                return {
+                    "total": int(parts[1]) * 1024,
+                    "used": int(parts[2]) * 1024,
+                    "available": int(parts[3]) * 1024,
+                    "use_percent": parts[4],
+                    "mounted_on": parts[8],
+                }
+            except (ValueError, IndexError):
+                pass
+        return None
 
     async def check_port_listening(self, port: int) -> bool:
-        """检查端口是否监听"""
-        command = f"netstat -tuln | grep ':{port} '"
+        """检查端口是否监听 (兼容 Linux/Mac)"""
+        # Linux: netstat -tuln
+        # Mac: netstat -an -p tcp / -p udp
+        command = f"netstat -tuln 2>/dev/null | grep ':{port} ' || netstat -an 2>/dev/null | grep LISTEN | grep '.{port} '"
         exit_code, stdout, stderr = await self.execute(command)
-        return exit_code == 0 and stdout != ""
+        return exit_code == 0 and stdout.strip() != ""
 
     async def check_process_exists(self, process_name: str) -> bool:
         """检查进程是否存在"""
@@ -207,10 +226,11 @@ class SSHClientWrapper:
         return stdout.strip() if exit_code == 0 else None
 
     async def get_mounted_filesystems(self) -> list[dict]:
-        """获取挂载的文件系统"""
+        """获取挂载的文件系统 (兼容 Linux/Mac)"""
+        # 统一使用 awk 提取关键字段
         command = "mount | grep -E '^/dev' | awk '{print $1, $3, $5}'"
         exit_code, stdout, stderr = await self.execute(command)
-
+        
         if exit_code != 0:
             return []
 
@@ -219,10 +239,12 @@ class SSHClientWrapper:
             if line:
                 parts = line.split()
                 if len(parts) >= 3:
+                    # 清理 Mac 风格的逗号和括号: (apfs, -> apfs
+                    fs_type = parts[2].strip("(),")
                     result.append({
                         "device": parts[0],
                         "mount_point": parts[1],
-                        "type": parts[2],
+                        "type": fs_type,
                     })
         return result
 
@@ -242,18 +264,105 @@ class SSHClientWrapper:
         return result
 
     async def get_routes(self) -> list[dict]:
-        """获取路由表"""
-        command = "ip route"
-        exit_code, stdout, stderr = await self.execute(command)
-
+        """获取路由表 (兼容 Linux/Mac)"""
+        # 尝试 ip route (Linux)
+        exit_code, stdout, stderr = await self.execute("ip route")
+        
+        # 如果失败，尝试 netstat -rn (Mac/BSD)
+        if exit_code != 0:
+            exit_code, stdout, stderr = await self.execute("netstat -rn")
+            
         if exit_code != 0:
             return []
 
         result = []
         for line in stdout.strip().split("\n"):
-            if line:
-                result.append({"route": line})
+            line = line.strip()
+            # 跳过空行和 netstat 的标题行
+            if not line or "Routing tables" in line or "Destination" in line or "Internet" in line:
+                continue
+            result.append({"route": line})
         return result
+
+    async def get_recursive_file_info(self, path: str, exclude_patterns: Optional[list[str]] = None) -> dict[str, dict]:
+        """递归获取文件信息 (兼容 Linux/Mac)"""
+        # 构建排除逻辑
+        exclude_args = ""
+        if exclude_patterns:
+            for pattern in exclude_patterns:
+                exclude_args += f' -not -path "{pattern}"'
+        
+        # 针对路径进行转义处理（简单单引号包裹）
+        safe_path = f"'{path}'"
+        
+        # 1. 尝试 Linux 风格 (GNU find)
+        # %p:路径, %m:权限(八进制), %u:属主, %g:属组, %s:大小, %T@:修改时间
+        cmd_linux = f'find {safe_path} {exclude_args} -printf "%p|%m|%u|%g|%s|%T@\\n"'
+        
+        # 2. 尝试 Mac 风格 (BSD find + stat)
+        # %N:路径, %Lp:权限(八进制), %Su:属主, %Sg:属组, %z:大小, %m:时间
+        cmd_mac = f'find {safe_path} {exclude_args} -exec stat -f "%N|%Lp|%Su|%Sg|%z|%m" {{}} +'
+        
+        # 合并命令，优先使用 Linux 风格，失败则尝试 Mac 风格
+        # 注意：这里保留 stderr 以便在完全失败时能够看到原因
+        command = f'({cmd_linux} 2>/dev/null) || ({cmd_mac})'
+        
+        exit_code, stdout, stderr = await self.execute(command)
+        
+        if exit_code != 0 and not stdout:
+            # 如果失败，返回错误信息以便前端展示
+            error_msg = stderr.strip() or "未知采集错误 (请检查路径是否存在或权限是否足够)"
+            return {"_error": error_msg}
+            
+        results = {}
+        for line in stdout.strip().split("\n"):
+            if not line:
+                continue
+            # 从右往左切分，防止路径中包含 |
+            parts = line.split("|")
+            if len(parts) < 6:
+                continue
+            
+            try:
+                # 最后的 5 个字段是确定长度的，前面的所有内容都视为路径
+                mtime = parts[-1]
+                size = parts[-2]
+                group = parts[-3]
+                owner = parts[-4]
+                perm = parts[-5]
+                filepath = "|".join(parts[:-5])
+                
+                results[filepath] = {
+                    "permissions": perm,
+                    "owner": owner,
+                    "group": group,
+                    "size": int(size),
+                    "mtime": int(float(mtime)),
+                    "md5": None # 预留 MD5
+                }
+            except (ValueError, IndexError):
+                continue
+
+        # 3. 异步获取 MD5 (仅针对文件)
+        # Linux: find ... -type f -exec md5sum {} +
+        # Mac: find ... -type f -exec md5 -r {} +
+        md5_linux = f'find {safe_path} {exclude_args} -type f -exec md5sum {{}} +'
+        md5_mac = f'find {safe_path} {exclude_args} -type f -exec md5 -r {{}} +'
+        md5_command = f'({md5_linux} 2>/dev/null) || ({md5_mac} 2>/dev/null)'
+        
+        _, md5_stdout, _ = await self.execute(md5_command)
+        if md5_stdout:
+            for line in md5_stdout.strip().split("\n"):
+                if not line: continue
+                # md5sum 输出: "hash  path"
+                # md5 -r 输出: "hash path"
+                parts = line.split(maxsplit=1)
+                if len(parts) == 2:
+                    h, p = parts
+                    if p in results:
+                        results[p]["md5"] = h
+        
+        return results
 
     async def scan_log_file(
         self,

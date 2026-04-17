@@ -12,7 +12,10 @@ let dicts = {
     snapshot: { items: {}, groups: {} }
 };
 
-// 当前选中关联状态
+let currentExecutionTargets = [];
+let targetEditIndex = -1; // -1 表示没在编辑
+
+// 当前选中关联状态（Drawer 临时状态，用于适配树形选择器）
 let selectedRelations = {
     communication: { ids: [], group_ids: [] },
     checkItem: { ids: [], group_ids: [] },
@@ -20,6 +23,7 @@ let selectedRelations = {
 };
 
 let currentModalType = null; // 当前抽屉类型
+
 
 // ---------------------- 基础数据加载 ----------------------
 
@@ -145,13 +149,8 @@ function selectRule(id) {
     const saveBtn = document.getElementById('saveRuleBtn');
     if(saveBtn) saveBtn.innerText = '保存规则配置';
     
-    selectedRelations = {
-        communication: { ids: [...(rule.communication_ids || [])], group_ids: [...(rule.communication_group_ids || [])] },
-        checkItem: { ids: [...(rule.check_item_ids || [])], group_ids: [...(rule.check_item_list_ids || [])] },
-        snapshot: { ids: [...(rule.snapshot_ids || [])], group_ids: [...(rule.snapshot_group_ids || [])] }
-    };
-    
-    updateSummaryDisplays();
+    currentExecutionTargets = rule.execution_targets ? JSON.parse(JSON.stringify(rule.execution_targets)) : [];
+    renderExecutionTargets();
     renderRuleTree();
     
     // 切换规则时立即获取当前正在运行的任务和历史
@@ -160,23 +159,63 @@ function selectRule(id) {
     loadExecutionHistory();
 }
 
-function updateSummaryDisplays() {
-    const summarize = (type) => {
-        const rels = selectedRelations[type];
-        if (!rels.ids.length && !rels.group_ids.length) {
-            return type === 'snapshot' ? '自动对齐最新' : '未配置资产';
-        }
-        let parts = [];
-        if (rels.group_ids.length) parts.push(`📁 ${rels.group_ids.length} 个组/列表`);
-        if (rels.ids.length) parts.push(`📄 ${rels.ids.length} 个项`);
-        return parts.join(' | ');
-    };
-    const commS = document.getElementById('commSummary');
-    const itemS = document.getElementById('itemSummary');
-    const snapS = document.getElementById('snapshotSummary');
-    if (commS) commS.innerText = summarize('communication');
-    if (itemS) itemS.innerText = summarize('checkItem');
-    if (snapS) snapS.innerText = summarize('snapshot');
+function renderExecutionTargets() {
+    const container = document.getElementById('executionTargetsContainer');
+    if (!container) return;
+    
+    if (currentExecutionTargets.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="padding: 20px;">点击右上角「+ 添加对比基准行」配置多组差异化执行策略</div>';
+        return;
+    }
+
+    let html = '';
+    currentExecutionTargets.forEach((target, idx) => {
+        let snapText = target.snapshot_id ? (dicts.snapshot.items[target.snapshot_id]?.name || '未知快照') : '未指定基准 (实时比较)';
+        
+        let commsIds = target.communications?.ids || [];
+        let commsText = commsIds.length ? `${commsIds.length} 台通信机` : '未配置';
+        
+        let citemsIds = target.check_items?.ids || [];
+        let citemsText = citemsIds.length ? `${citemsIds.length} 个检查项` : '未配置';
+        
+        html += `
+        <div class="target-row" style="display: flex; gap: 15px; background: var(--surface-2); padding: 15px; border-radius: 8px; margin-bottom: 10px; align-items: center; border: 1px solid var(--border);">
+            <div style="flex: 1;">
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">🎯 基准快照</div>
+                <div style="font-weight: 500; cursor: pointer;" onclick="window.checks.openAssetDrawerForCheckRow('snapshot', ${idx})"><span style="margin-right:5px">📸</span>${snapText}</div>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">💻 目标通信机集合</div>
+                <div style="font-weight: 500; cursor: pointer;" onclick="window.checks.openAssetDrawerForCheckRow('communication', ${idx})"><span style="margin-right:5px">🖥️</span>${commsText}</div>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">🔍 指定检查项集合</div>
+                <div style="font-weight: 500; cursor: pointer;" onclick="window.checks.openAssetDrawerForCheckRow('checkItem', ${idx})"><span style="margin-right:5px">📋</span>${citemsText}</div>
+            </div>
+            <div class="row-actions" style="display: flex; gap: 8px;">
+                <button type="button" class="btn-icon" onclick="window.checks.removeExecutionTarget(${idx})" title="删除此行" style="color: var(--danger); font-size: 16px;">🗑️</button>
+            </div>
+        </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function addExecutionTarget() {
+    currentExecutionTargets.push({
+        snapshot_id: null,
+        communications: { ids: [], group_ids: [] },
+        check_items: { ids: [], list_ids: [] }
+    });
+    renderExecutionTargets();
+}
+
+function removeExecutionTarget(idx) {
+    if (confirm('确认删除该执行策略行吗？')) {
+        currentExecutionTargets.splice(idx, 1);
+        renderExecutionTargets();
+    }
 }
 
 // ---------------------- 规则 CRUD ----------------------
@@ -185,8 +224,8 @@ function createNewRule() {
     currentRuleId = null;
     const form = document.getElementById('ruleForm');
     if (form) form.reset();
-    selectedRelations = { communication: { ids: [], group_ids: [] }, checkItem: { ids: [], group_ids: [] }, snapshot: { ids: [], group_ids: [] } };
-    updateSummaryDisplays();
+    currentExecutionTargets = [];
+    renderExecutionTargets();
     const detail = document.getElementById('ruleDetailSection');
     const empty = document.getElementById('ruleEmptyState');
     if (detail) detail.style.display = 'block';
@@ -252,12 +291,7 @@ async function saveCurrentRule() {
         cron_expression: finalCron,
         is_active: existingRule ? existingRule.is_active : true,
         allow_manual_execution: existingRule ? existingRule.allow_manual_execution : true,
-        communication_ids: selectedRelations.communication.ids,
-        communication_group_ids: selectedRelations.communication.group_ids,
-        check_item_ids: selectedRelations.checkItem.ids,
-        check_item_list_ids: selectedRelations.checkItem.group_ids,
-        snapshot_ids: selectedRelations.snapshot.ids,
-        snapshot_group_ids: selectedRelations.snapshot.group_ids
+        execution_targets: currentExecutionTargets
     };
 
     if (!payload.name) return alert('请输入规则名称');
@@ -308,20 +342,54 @@ async function deleteCurrentRule() {
 
 // ---------------------- 资产抽屉 (Tree Selector) ----------------------
 
-function openAssetDrawer(type) {
+// --- 通用资产选择器核心逻辑 ---
+let assetSelectorCallback = null;
+
+function openAssetDrawer(type, initialSelection, onConfirm, titlePrefix = "") {
     currentModalType = type;
+    assetSelectorCallback = onConfirm;
+    
+    // 初始化选中状态
+    selectedRelations = JSON.parse(JSON.stringify(initialSelection || {
+        communication: { ids: [], group_ids: [] },
+        checkItem: { ids: [], group_ids: [] },
+        snapshot: { ids: [], group_ids: [] }
+    }));
+    
     const drawer = document.getElementById('assetDrawer');
     const titleMap = { communication: '选择通信机', checkItem: '选择检查项', snapshot: '选择基准快照' };
-    document.getElementById('drawerTitle').innerText = titleMap[type];
+    document.getElementById('drawerTitle').innerText = (titlePrefix ? `${titlePrefix} - ` : "") + titleMap[type];
     document.getElementById('assetSearchInput').value = '';
-    document.getElementById('selectedCount').innerText = `已选 ${selectedRelations[type].ids.length} 项 / ${selectedRelations[type].group_ids.length} 组`;
+    document.getElementById('drawerSelectedCount').innerText = `已选 ${selectedRelations[type].ids.length} 项`;
     drawer.classList.add('active');
     renderAssetTree();
 }
 
 function closeAssetDrawer() {
+    if (assetSelectorCallback) {
+        assetSelectorCallback(selectedRelations);
+    }
     document.getElementById('assetDrawer').classList.remove('active');
-    updateSummaryDisplays();
+    assetSelectorCallback = null;
+}
+
+// --- 适配检查规则行的特化逻辑 ---
+function openAssetDrawerForCheckRow(type, index) {
+    const target = currentExecutionTargets[index] || {};
+    const initial = {
+        communication: { ids: [...(target.communications?.ids || [])], group_ids: [...(target.communications?.group_ids || [])] },
+        checkItem: { ids: [...(target.check_items?.ids || [])], group_ids: [...(target.check_items?.list_ids || [])] },
+        snapshot: { ids: target.snapshot_id ? [target.snapshot_id] : [], group_ids: [] }
+    };
+    
+    openAssetDrawer(type, initial, (selected) => {
+        let t = currentExecutionTargets[index];
+        if (!t) return;
+        t.communications = { ids: [...selected.communication.ids], group_ids: [...selected.communication.group_ids] };
+        t.check_items = { ids: [...selected.checkItem.ids], list_ids: [...selected.checkItem.group_ids] };
+        t.snapshot_id = selected.snapshot.ids.length > 0 ? selected.snapshot.ids[0] : null;
+        renderExecutionTargets();
+    }, `行 ${index + 1}`);
 }
 
 function filterAssetTree() { renderAssetTree(); }
@@ -350,13 +418,26 @@ function buildHierarchy(groups, items) {
     return root;
 }
 
+function hasMatch(node, kw) {
+    if (!kw) return true;
+    const name = (node.name || node.ip_address || node.id || "").toString().toLowerCase();
+    if (name.includes(kw)) return true;
+    if (node.isGroup) {
+        return (node.children && node.children.some(c => hasMatch(c, kw))) || 
+               (node.items && node.items.some(i => hasMatch(i, kw)));
+    }
+    return false;
+}
+
 function renderNodeList(nodes, level, kw) {
     let html = '';
     nodes.forEach(node => {
         const type = currentModalType;
         const isSelected = node.isGroup ? selectedRelations[type].group_ids.includes(node.id) : selectedRelations[type].ids.includes(node.id);
         const displayName = node.name || node.ip_address || `ID:${node.id}`;
-        if (kw && !displayName.toLowerCase().includes(kw)) return;
+        
+        // 搜索逻辑改进：如果自己匹配，或者任何子孙节点匹配，则渲染
+        if (kw && !hasMatch(node, kw)) return;
 
         html += `
             <div class="tree-node" style="padding-left: ${level * 20}px">
@@ -375,7 +456,7 @@ function renderNodeList(nodes, level, kw) {
     return html || (level === 0 ? '<p class="empty-text">无匹配项</p>' : '');
 }
 
-function handleTreeCheck(event, isGroup, id) {
+async function handleTreeCheck(event, isGroup, id) {
     const checked = event.target.checked;
     const type = currentModalType;
     
@@ -383,9 +464,8 @@ function handleTreeCheck(event, isGroup, id) {
         cascadeSelect(type, id, checked);
         if (checked && type === 'snapshot') {
             const group = dicts.snapshot.groups[id];
-            if (group && group.check_item_list_id && !selectedRelations.checkItem.group_ids.includes(group.check_item_list_id)) {
-                selectedRelations.checkItem.group_ids.push(group.check_item_list_id);
-                updateSummaryDisplays();
+            if (group && group.check_item_list_id) {
+                cascadeSelect('checkItem', group.check_item_list_id, true);
             }
         }
     } else {
@@ -393,7 +473,7 @@ function handleTreeCheck(event, isGroup, id) {
         if (checked && !arr.includes(id)) {
             arr.push(id);
             if (type === 'snapshot') {
-                autoFillFromSnapshot(id);
+                await autoFillFromSnapshot(id);
             }
         }
         else if (!checked) {
@@ -402,7 +482,7 @@ function handleTreeCheck(event, isGroup, id) {
         }
     }
     
-    document.getElementById('selectedCount').innerText = `已选 ${selectedRelations[type].ids.length} 项 / ${selectedRelations[type].group_ids.length} 组`;
+    document.getElementById('drawerSelectedCount').innerText = `已选 ${selectedRelations[type].ids.length} 项`;
     renderAssetTree(); 
 }
 
@@ -417,8 +497,8 @@ async function autoFillFromSnapshot(snapshotId) {
                 selectedRelations.communication.ids.push(inst.communication_id);
                 updated = true;
             }
-            if (inst.check_item_list_id && !selectedRelations.checkItem.group_ids.includes(inst.check_item_list_id)) {
-                selectedRelations.checkItem.group_ids.push(inst.check_item_list_id);
+            if (inst.check_item_list_id) {
+                cascadeSelect('checkItem', inst.check_item_list_id, true);
                 updated = true;
             }
         });
@@ -426,14 +506,13 @@ async function autoFillFromSnapshot(snapshotId) {
         const snap = dicts.snapshot.items[snapshotId];
         if (snap && snap.group_id) {
             const group = dicts.snapshot.groups[snap.group_id];
-            if (group && group.check_item_list_id && !selectedRelations.checkItem.group_ids.includes(group.check_item_list_id)) {
-                selectedRelations.checkItem.group_ids.push(group.check_item_list_id);
+            if (group && group.check_item_list_id) {
+                cascadeSelect('checkItem', group.check_item_list_id, true);
                 updated = true;
             }
         }
 
         if (updated) {
-            updateSummaryDisplays();
             console.log("已自动通过快照填充关联的通信机和检查项列表");
         }
     } catch (e) { console.error("自动填充资产失败:", e); }
@@ -491,6 +570,97 @@ async function executeCurrentRule() {
     } catch (e) { alert('启动失败: ' + e.message); }
 }
 
+// ---------------------- 任务监控与控制台 ----------------------
+function switchConsoleTab(btn) {
+    const parent = btn.parentElement;
+    parent.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    
+    const viewId = btn.dataset.view;
+    const content = parent.nextElementSibling.parentElement;
+    content.querySelectorAll('.tab-view').forEach(view => {
+        view.classList.remove('active');
+    });
+    document.getElementById(viewId).classList.add('active');
+}
+
+async function loadCurrentMultiTasksProgress() {
+    if (!currentRuleId) return;
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/reports?rule_id=${currentRuleId}&limit=50`, { headers: window.shared.getHeaders() });
+        const reports = await res.json();
+        
+        // 过滤出当前规则且正在运行的任务
+        const runningReports = reports.filter(r => r.status === 'running' || r.status === 'pending');
+        
+        const container = document.getElementById('currentTasksList');
+        if (!container) return;
+
+        if (runningReports.length === 0) {
+            container.innerHTML = '<div class="empty-state" style="padding:40px 10px; opacity:0.5;">📡 等待任务下发...</div>';
+            if (progressPollInterval) { clearInterval(progressPollInterval); progressPollInterval = null; }
+            return;
+        }
+
+        // 渲染进度列表
+        container.innerHTML = runningReports.map(r => {
+            const progress = r.total_nodes > 0 ? Math.floor((r.completed_nodes / r.total_nodes) * 100) : 0;
+            return `
+                <div class="execution-progress" style="margin-bottom:15px; border-color:var(--accent);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:8px; font-size:12px;">
+                        <span style="color:var(--accent); font-weight:bold;">🚀 #${r.id} 正在执行</span>
+                        <span>${r.completed_nodes} / ${r.total_nodes} 节点</span>
+                    </div>
+                    <div class="progress-bar" style="height:8px; background:rgba(255,255,255,0.05);">
+                        <div class="progress-bar-fill" style="width:${progress}%; background:linear-gradient(90deg, var(--accent), #00d2ff);"></div>
+                    </div>
+                    <div style="display:flex; gap:10px; margin-top:10px;">
+                        <button class="btn btn-outline btn-sm" style="flex:1; font-size:11px; padding:4px;" onclick="window.reports.viewReportDetail(${r.id})">实时详情</button>
+                        <button class="btn btn-danger btn-sm" style="flex:1; font-size:11px; padding:4px;" onclick="window.reports.terminateReport(${r.id})">中止</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        // 启动轮询
+        if (!progressPollInterval) {
+            progressPollInterval = setInterval(loadCurrentMultiTasksProgress, 3000);
+        }
+    } catch (e) { console.error('加载任务进度失败:', e); }
+}
+
+async function loadExecutionHistory() {
+    if (!currentRuleId) return;
+    try {
+        const res = await fetch(`${window.shared.API_BASE}/api/v1/reports?rule_id=${currentRuleId}&limit=50`, { headers: window.shared.getHeaders() });
+        const reports = await res.json();
+        
+        // 过滤出当前规则的历史任务（排除正在运行的）
+        const history = reports.filter(r => r.status !== 'running' && r.status !== 'pending').slice(0, 50);
+        
+        const container = document.getElementById('taskHistoryList');
+        if (!container) return;
+
+        if (history.length === 0) {
+            container.innerHTML = '<div class="empty-state">暂无历史记录</div>';
+            return;
+        }
+
+        container.innerHTML = history.map(r => {
+            const statusIcon = r.status === 'success' ? '✅' : (r.status === 'failed' ? '❌' : '⏹');
+            const timeStr = r.start_time ? new Date(r.start_time).toLocaleString('zh-CN', {month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'}) : '-';
+            return `
+                <div class="history-item" onclick="window.reports.viewReportDetail(${r.id})" title="点击查看详情">
+                    <span class="item-status">${statusIcon}</span>
+                    <span class="item-id">#${r.id}</span>
+                    <span class="item-msg">成功 ${r.success_checks} / 失败 ${r.failed_checks}</span>
+                    <span class="item-time">${timeStr}</span>
+                </div>
+            `;
+        }).join('');
+    } catch (e) { console.error('加载执行历史失败:', e); }
+}
+
 // ---------------------- 初始化 ----------------------
 
 function initChecksTab() { 
@@ -499,8 +669,10 @@ function initChecksTab() {
 
 window.checks = {
     initChecksTab, loadCheckRules, createNewRule, selectRule, saveCurrentRule, toggleCurrentRule, deleteCurrentRule, executeCurrentRule, 
-    filterRules, openAssetDrawer, closeAssetDrawer, filterAssetTree, renderAssetTree, handleTreeCheck, 
-    cancelCreateRule, handleCronTemplateChange, autoFillFromSnapshot
+    filterRules, openAssetDrawer, openAssetDrawerForCheckRow, closeAssetDrawer, filterAssetTree, renderAssetTree, handleTreeCheck, 
+    cancelCreateRule, handleCronTemplateChange, autoFillFromSnapshot, addExecutionTarget, removeExecutionTarget,
+    loadCurrentMultiTasksProgress, loadExecutionHistory, switchConsoleTab,
+    dicts, loadDictionaries
 };
 
 

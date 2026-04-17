@@ -2,7 +2,14 @@
 from datetime import datetime
 from typing import Optional, List
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ExecutionTarget(BaseModel):
+    id: Optional[str] = None
+    snapshot_id: Optional[int] = None
+    communications: dict = Field(default_factory=lambda: {"ids": [], "group_ids": []})
+    check_items: dict = Field(default_factory=lambda: {"ids": [], "list_ids": []})
 
 
 class CheckRuleBase(BaseModel):
@@ -19,12 +26,7 @@ class CheckRuleBase(BaseModel):
 
 class CheckRuleCreate(CheckRuleBase):
     """检查规则创建"""
-    snapshot_ids: List[int] = []
-    snapshot_group_ids: List[int] = []
-    check_item_ids: List[int] = []
-    check_item_list_ids: List[int] = []
-    communication_ids: List[int] = []
-    communication_group_ids: List[int] = []
+    execution_targets: List[ExecutionTarget] = []
 
 
 class CheckRuleUpdate(BaseModel):
@@ -37,12 +39,7 @@ class CheckRuleUpdate(BaseModel):
     time_window_start: Optional[str] = None
     time_window_end: Optional[str] = None
     time_window_weekdays: Optional[str] = None
-    snapshot_ids: Optional[List[int]] = None
-    snapshot_group_ids: Optional[List[int]] = None
-    check_item_ids: Optional[List[int]] = None
-    check_item_list_ids: Optional[List[int]] = None
-    communication_ids: Optional[List[int]] = None
-    communication_group_ids: Optional[List[int]] = None
+    execution_targets: Optional[List[ExecutionTarget]] = None
 
 
 class CheckRuleResponse(CheckRuleBase):
@@ -52,12 +49,7 @@ class CheckRuleResponse(CheckRuleBase):
     id: int
     created_at: datetime
     updated_at: datetime
-    snapshot_ids: List[int] = []
-    snapshot_group_ids: List[int] = []
-    check_item_ids: List[int] = []
-    check_item_list_ids: List[int] = []
-    communication_ids: List[int] = []
-    communication_group_ids: List[int] = []
+    execution_targets: Optional[List[ExecutionTarget]] = []
 
 
 class ScheduledTaskBase(BaseModel):

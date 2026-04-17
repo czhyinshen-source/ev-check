@@ -15,16 +15,36 @@ class CheckLockManager:
 
     def __init__(self):
         self._redis: Optional[redis.Redis] = None
-        self._local_lock = asyncio.Lock()  # 本地锁用于连接管理
+        self._loop = None
+        self._local_lock: Optional[asyncio.Lock] = None
 
     async def _get_redis(self) -> redis.Redis:
-        """获取 Redis 连接"""
-        if self._redis is None:
-            self._redis = redis.from_url(
+        """获取 Redis 连接 (线程/循环安全)"""
+        try:
+            current_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return redis.from_url(
                 settings.REDIS_URL,
                 encoding="utf-8",
                 decode_responses=True
             )
+
+        if self._redis is not None:
+            if self._loop != current_loop:
+                self._redis = None
+                self._local_lock = None
+        
+        if self._redis is None:
+            self._redis = redis.from_url(
+                settings.REDIS_URL,
+                encoding="utf-8",
+                decode_responses=True,
+                socket_connect_timeout=3,
+                socket_timeout=3,
+            )
+            self._loop = current_loop
+            self._local_lock = asyncio.Lock()
+            
         return self._redis
 
     async def acquire_lock(self, task_id: int) -> bool:

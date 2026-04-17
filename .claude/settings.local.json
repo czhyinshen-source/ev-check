@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/chenzhihui/Documents/trae_projects/ev_check/.venv/bin/pip install:*)",
+      "Bash(pip install:*)",
+      "Bash(git checkout:*)",
+      "Bash(lsof -ti:8000)",
+      "Bash(xargs kill:*)",
+      "Bash(curl -s http://localhost:8000/api/v1/health)",
+      "Read(//private/tmp/**)",
+      "Bash(pip3 install:*)",
+      "Bash(curl -X GET \"http://localhost:8000/api/snapshots/rules\" -H \"accept: application/json\")",
+      "Bash(curl -X GET \"http://localhost:8000/api/v1/check-rules\" -H \"accept: application/json\")"
+    ]
+  }
+}

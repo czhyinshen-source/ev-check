@@ -3,6 +3,7 @@ from typing import Optional, List, Dict
 from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Body
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
@@ -12,6 +13,7 @@ from app.database import get_db
 from app.models import User, Communication, CommunicationGroup, SSHKey
 from app.api.users import get_current_active_user
 from app.utils.ssh_client import SSHClientWrapper
+from app.services.rule_validator import ensure_not_in_execution_targets
 
 router = APIRouter()
 
@@ -267,40 +269,88 @@ async def delete_group(
     current_user: User = Depends(get_current_active_user),
 ):
     """删除通信机分组"""
-    result = await db.execute(select(CommunicationGroup).where(CommunicationGroup.id == group_id))
-    group = result.scalar_one_or_none()
-    if not group:
+    from sqlalchemy.orm import selectinload
+    result = await db.execute(
+        select(CommunicationGroup)
+        .options(selectinload(CommunicationGroup.children), selectinload(CommunicationGroup.communications))
+        .where(CommunicationGroup.id == group_id)
+    )
+    db_group = result.scalar_one_or_none()
+    if not db_group:
         raise HTTPException(status_code=404, detail="分组不存在")
 
     # 检查是否有子分组
-    if group.children:
+    if db_group.children:
         raise HTTPException(status_code=400, detail="请先删除子分组")
 
     # 检查是否有通信机
-    result = await db.execute(select(Communication).where(Communication.group_id == group_id))
-    if result.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="请先将通信机迁移到其他分组")
+    if db_group.communications:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="该分组下还有通信机，无法删除"
+        )
+        
+    await ensure_not_in_execution_targets(db, "communication_group_id", group_id, f"节点分组 {db_group.name}")
 
-    await db.delete(group)
+    await db.delete(db_group)
     await db.commit()
 
 
 @router.get("", response_model=List[dict])
 async def list_communications(
     group_id: Optional[int] = None,
-    skip: int = 0,
-    limit: int = 100,
+    page: int = 1,
+    size: int = 20,
+    q: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    """获取通信机列表"""
+    """获取通信机列表（支持分页和搜索）"""
+    from sqlalchemy import func, or_
+    from fastapi.responses import JSONResponse
+
     query = select(Communication)
     if group_id:
-        query = query.where(Communication.group_id == group_id)
-    query = query.offset(skip).limit(limit)
+        # 获取所有分组以构建父子关系，实现级联查询
+        all_groups_res = await db.execute(select(CommunicationGroup.id, CommunicationGroup.parent_id))
+        all_groups = all_groups_res.all()
+        
+        from collections import defaultdict
+        children_map = defaultdict(list)
+        for g_id, p_id in all_groups:
+            if p_id is not None:
+                children_map[p_id].append(g_id)
+                
+        valid_group_ids = {group_id}
+        stack = [group_id]
+        while stack:
+            curr = stack.pop()
+            for child in children_map[curr]:
+                if child not in valid_group_ids:
+                    valid_group_ids.add(child)
+                    stack.append(child)
+                    
+        query = query.where(Communication.group_id.in_(valid_group_ids))
+        
+    if q:
+        query = query.where(
+            or_(
+                Communication.name.ilike(f"%{q}%"),
+                Communication.ip_address.ilike(f"%{q}%"),
+            )
+        )
+
+    # 计算总数
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_query)).scalar() or 0
+
+    # 分页
+    skip = (page - 1) * size
+    query = query.order_by(Communication.id).offset(skip).limit(size)
     result = await db.execute(query)
     communications = result.scalars().all()
-    return [
+
+    data = [
         {
             "id": c.id,
             "group_id": c.group_id,
@@ -311,11 +361,14 @@ async def list_communications(
             "auth_method": c.auth_method,
             "description": c.description,
             "is_active": c.is_active,
-            "created_at": c.created_at.isoformat(),
-            "updated_at": c.updated_at.isoformat(),
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+            "updated_at": c.updated_at.isoformat() if c.updated_at else None,
         }
         for c in communications
     ]
+
+    return JSONResponse(content=data, headers={"X-Total-Count": str(total)})
+
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
@@ -385,8 +438,11 @@ async def batch_delete_communications(
     result = await db.execute(select(Communication).where(Communication.id.in_(data.ids)))
     communications = result.scalars().all()
 
-    for comm in communications:
-        await db.delete(comm)
+    for com in communications:
+        if not com:
+            continue
+        await ensure_not_in_execution_targets(db, "communication_id", com.id, f"通信机 {com.name}")
+        await db.delete(com)
 
     await db.commit()
 
@@ -461,6 +517,38 @@ async def batch_test_connections(
     }
 
 
+@router.get("/excel-template")
+async def download_excel_template(current_user: User = Depends(get_current_active_user)):
+    """下载通信机导入模板"""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "通信机导入模板"
+    headers = ['名称', 'IP地址', '端口', '用户名', '描述', '通信机分组']
+    ws.append(headers)
+    
+    ws.append(['示例机器', '192.168.1.100', 22, 'root', '这是一台示例机器', '本地'])
+    
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 15
+    ws.column_dimensions['C'].width = 10
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 30
+    ws.column_dimensions['F'].width = 20
+
+    stream = BytesIO()
+    wb.save(stream)
+    stream.seek(0)
+    
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename*=UTF-8''template.xlsx",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+
 @router.get("/{comm_id}")
 async def get_communication(
     comm_id: int,
@@ -521,7 +609,7 @@ async def test_connection(
     if not comm:
         raise HTTPException(status_code=404, detail="通信机不存在")
 
-    # 获取SSH密钥���如果使用密钥认证）
+    # 获取SSH密钥如果使用密钥认证）
     private_key = None
     if comm.private_key_path and comm.private_key_path.startswith("key_"):
         ssh_key_id = int(comm.private_key_path.replace("key_", ""))
@@ -575,8 +663,10 @@ async def delete_communication(
     if not comm:
         raise HTTPException(status_code=404, detail="通信机不存在")
 
+    await ensure_not_in_execution_targets(db, "communication_id", comm_id, f"通信机 {comm.name}")
     await db.delete(comm)
     await db.commit()
+
 
 
 @router.post("/import-excel")

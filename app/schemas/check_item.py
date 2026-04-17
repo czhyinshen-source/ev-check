@@ -128,6 +128,7 @@ class CheckItemUpdate(BaseModel):
     target_path: Optional[str] = None
     check_attributes: Optional[dict] = None
     description: Optional[str] = None
+    list_id: Optional[int] = None  # 所属检查项列表ID
 
 
 class CheckItemResponse(CheckItemBase):

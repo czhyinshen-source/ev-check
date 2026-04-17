@@ -19,7 +19,7 @@ class CheckTaskCallback(Task):
         print(f"检查任务 {task_id} 失败: {exc}")
 
 
-def run_check(result_id: int, rule_id: int, communication_id: int, snapshot_id: int = None):
+def run_check(result_id: int, rule_id: int, communication_id: int, snapshot_id: int = None, check_item_ids: list = None):
     import asyncio
     import traceback
 
@@ -34,6 +34,7 @@ def run_check(result_id: int, rule_id: int, communication_id: int, snapshot_id: 
                     rule_id=rule_id,
                     communication_id=communication_id,
                     snapshot_id=snapshot_id,
+                    check_item_ids=check_item_ids,
                 )
                 return {
                     "status": "success",
@@ -78,8 +79,9 @@ def execute_check_task(
     rule_id: int,
     communication_id: int,
     snapshot_id: int = None,
+    check_item_ids: list = None,
 ):
-    return run_check(result_id, rule_id, communication_id, snapshot_id)
+    return run_check(result_id, rule_id, communication_id, snapshot_id, check_item_ids)
 
 
 @celery_app.task(
@@ -101,19 +103,10 @@ def execute_batch_check_task(
             service = CheckExecutionService(db)
             results = await service.execute_rule(rule_id)
 
-            task_ids = []
-            for result in results:
-                task = execute_check_task.delay(
-                    result_id=result.id,
-                    rule_id=rule_id,
-                    communication_id=result.communication_id,
-                )
-                task_ids.append(task.id)
-
             return {
                 "status": "success",
                 "created_results": len(results),
-                "task_ids": task_ids,
+                "task_ids": [r.id for r in results],
             }
         await local_engine.dispose()
 
@@ -143,3 +136,41 @@ def cancel_check_task(result_id: int):
         await local_engine.dispose()
 
     return asyncio.run(_execute())
+
+
+@celery_app.task
+def cleanup_temporary_files():
+    """
+    定期清理大文件对比产生的临时文件 (/tmp/ev_check_runs/)
+    """
+    import os
+    import time
+    import shutil
+
+    target_dir = "/tmp/ev_check_runs"
+    if not os.path.exists(target_dir):
+        return {"status": "skipped", "reason": "directory_not_exists"}
+
+    # 保留 24 小时
+    RETENTION_SECONDS = 24 * 3600
+    now = time.time()
+    count = 0
+
+    for filename in os.listdir(target_dir):
+        file_path = os.path.join(target_dir, filename)
+        try:
+            # 检查文件修改时间
+            if os.path.isfile(file_path):
+                if now - os.path.getmtime(file_path) > RETENTION_SECONDS:
+                    os.remove(file_path)
+                    count += 1
+            elif os.path.isdir(file_path):
+                # 如果是目录，也要检查并清理
+                if now - os.path.getmtime(file_path) > RETENTION_SECONDS:
+                    shutil.rmtree(file_path)
+                    count += 1
+        except Exception as e:
+            print(f"Failed to delete {file_path}: {e}")
+
+    return {"status": "success", "deleted_count": count}
+

@@ -3,6 +3,8 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Set
 
+from app.utils.datetime_util import get_now
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -39,26 +41,66 @@ class CheckExecutionService:
         self.progress_tracker = get_progress_tracker()
 
     async def execute_rule(self, rule_id: int) -> List[CheckResult]:
-        """
-        根据规则创建执行任务
+        """根据规则执行"""
+        result = await self.db.execute(select(CheckRule).where(CheckRule.id == rule_id))
+        rule = result.scalar_one_or_none()
         
-        Args:
-            rule_id: 检查规则ID
+        if not rule:
+            raise CheckExecutionError("规则不存在")
             
-        Returns:
-            List[CheckResult]: 启动的检查结果记录
-        """
-        communications = await self._get_flattened_communications(rule_id)
-        if not communications:
-            raise CheckExecutionError("规则没有关联有效的通信机")
+        if not rule.execution_targets:
+            raise CheckExecutionError("规则未配置任何执行目标")
             
-        return await self.start_batch_check(rule_id, [c.id for c in communications])
+        from app.models import CheckReport
+        report = CheckReport(
+            rule_id=rule_id,
+            name=f"{rule.name}_{get_now().strftime('%Y%m%d_%H%M%S')}",
+            trigger_type="manual",
+            status="pending",
+            total_nodes=0,
+            start_time=get_now()
+        )
+        self.db.add(report)
+        await self.db.flush()
+        
+        results = []
+        is_first = True
+        total_nodes = 0
+        
+        for target in rule.execution_targets:
+            comm_ids = await self._resolve_communication_ids(target.get("communications", {}))
+            c_item_ids = await self._resolve_check_item_ids(target.get("check_items", {}))
+            snapshot_id = target.get("snapshot_id")
+            
+            if not comm_ids or not c_item_ids:
+                continue
+                
+            for comm_id in comm_ids:
+                try:
+                    res = await self._start_check_internal(
+                        rule_id, comm_id, c_item_ids, snapshot_id, report.id, skip_lock_check=not is_first
+                    )
+                    results.append(res)
+                    total_nodes += 1
+                    is_first = False
+                except CheckExecutionError as e:
+                    print(f"启动检查失败: {e}")
+                    
+        report.total_nodes = total_nodes
+        if total_nodes == 0:
+            report.status = "failed"
+            report.end_time = get_now()
+            
+        await self.db.commit()
+        return results
 
-    async def start_check(
+    async def _start_check_internal(
         self,
         rule_id: int,
         communication_id: int,
-        report_id: Optional[int] = None,
+        check_item_ids: List[int],
+        snapshot_id: Optional[int],
+        report_id: Optional[int],
         skip_lock_check: bool = False,
     ) -> CheckResult:
         """
@@ -81,7 +123,7 @@ class CheckExecutionService:
             rule_id=rule_id,
             communication_id=communication_id,
             status="pending",
-            start_time=datetime.utcnow(),
+            start_time=get_now(),
             progress=0,
         )
         self.db.add(check_result)
@@ -96,6 +138,16 @@ class CheckExecutionService:
                 await self.db.commit()
                 # If we fail, ensure we don't proceed
                 raise CheckExecutionError("无法获取执行锁，可能有其他任务正在执行")
+                
+        # Fire celery task here
+        from app.tasks.check_tasks import execute_check_task
+        execute_check_task.delay(
+            result_id=check_result.id,
+            rule_id=rule_id,
+            communication_id=communication_id,
+            snapshot_id=snapshot_id,
+            check_item_ids=check_item_ids
+        )
 
         return check_result
 
@@ -105,6 +157,7 @@ class CheckExecutionService:
         rule_id: int,
         communication_id: int,
         snapshot_id: Optional[int] = None,
+        check_item_ids: Optional[List[int]] = None,
     ) -> CheckResult:
         """
         执行检查（由 Celery 任务调用）
@@ -126,13 +179,15 @@ class CheckExecutionService:
 
         try:
             # 1. 获取检查规则和展平后的检查项列表
-            check_items = await self._get_flattened_check_items(rule_id)
+            if not check_item_ids:
+                raise CheckExecutionError("执行目标未指定检查项")
+                
+            res = await self.db.execute(select(CheckItem).where(CheckItem.id.in_(check_item_ids)))
+            check_items = res.scalars().all()
             if not check_items:
-                raise CheckExecutionError("检查规则未关联有效的检查项")
+                raise CheckExecutionError("提取检查项目录全部为空")
 
-            # 2. 获取所有相关的快照（如果有），这里作为备用基准值查找表
-            snapshots = await self._get_flattened_snapshots(rule_id)
-            snapshot_ids = [s.id for s in snapshots] if snapshots else []
+            snapshot_ids = [snapshot_id] if snapshot_id else []
 
             # 3. 建立 SSH 连接
             communication = await self._get_communication(communication_id)
@@ -211,13 +266,21 @@ class CheckExecutionService:
             await self.progress_tracker.clear_progress(result_id)
             await self.lock_manager.release_lock(result_id)
 
-            check_result.status = "success" if errors == 0 else "completed_with_errors"
-            check_result.end_time = datetime.utcnow()
+            # 6. 确定最终状态
+            check_result.end_time = get_now()
             check_result.progress = 100
 
-            if errors > 0 and passed == 0 and failed == 0:
+            if errors > 0:
+                if passed == 0 and failed == 0:
+                    check_result.status = "failed"
+                    check_result.error_message = "所有检查项执行遇到系统错误"
+                else:
+                    check_result.status = "completed_with_errors"
+            elif failed > 0:
                 check_result.status = "failed"
-                check_result.error_message = "所有检查项执行失败"
+                check_result.error_message = f"有 {failed} 项检查不通过"
+            else:
+                check_result.status = "success"
 
             await self.db.commit()
             await self.db.refresh(check_result)
@@ -228,18 +291,20 @@ class CheckExecutionService:
             return check_result
 
         except CheckExecutionError:
+            await self.db.rollback()
             await self.lock_manager.release_lock(result_id)
             check_result.status = "failed"
-            check_result.end_time = datetime.utcnow()
+            check_result.end_time = get_now()
             await self.db.commit()
             if report_id:
                 await self.update_report_progress(report_id, False)
             raise
         except Exception as e:
+            await self.db.rollback()
             await self.lock_manager.release_lock(result_id)
             check_result.status = "failed"
             check_result.error_message = str(e)
-            check_result.end_time = datetime.utcnow()
+            check_result.end_time = get_now()
             await self.db.commit()
             if report_id:
                 await self.update_report_progress(report_id, False)
@@ -261,42 +326,32 @@ class CheckExecutionService:
         report = result.scalar_one_or_none()
         if report and report.completed_nodes >= report.total_nodes:
             report.status = "failed" if report.failed_nodes > 0 else "success"
-            report.end_time = datetime.utcnow()
+            report.end_time = get_now()
             await self.db.commit()
 
-    async def start_batch_check(
-        self,
-        rule_id: int,
-        communication_ids: List[int],
-    ) -> List[CheckResult]:
-        """启动批量检查"""
-        from app.models import CheckReport, CheckRule
+    async def _resolve_communication_ids(self, data: dict) -> List[int]:
+        ids = set(data.get("ids", []))
+        group_ids = data.get("group_ids", [])
+        if group_ids:
+            res = await self.db.execute(
+                select(Communication)
+                .where(Communication.group_id.in_(group_ids))
+            )
+            for c in res.scalars().all():
+                ids.add(c.id)
+        return list(ids)
         
-        result = await self.db.execute(select(CheckRule).where(CheckRule.id == rule_id))
-        rule = result.scalar_one_or_none()
-        rule_name = rule.name if rule else "未知规则"
-        
-        report = CheckReport(
-            rule_id=rule_id,
-            name=f"{rule_name} - {datetime.utcnow().strftime('%Y%m%d_%H%M%S')}",
-            trigger_type="manual",
-            status="pending",
-            total_nodes=len(communication_ids),
-            start_time=datetime.utcnow()
-        )
-        self.db.add(report)
-        await self.db.flush()
-        
-        results = []
-        is_first = True
-        for comm_id in communication_ids:
-            try:
-                result = await self.start_check(rule_id, comm_id, report.id, skip_lock_check=not is_first)
-                is_first = False
-                results.append(result)
-            except CheckExecutionError as e:
-                print(f"启动检查失败: {e}")
-        return results
+    async def _resolve_check_item_ids(self, data: dict) -> List[int]:
+        ids = set(data.get("ids", []))
+        list_ids = data.get("list_ids", [])
+        if list_ids:
+            res = await self.db.execute(
+                select(CheckItem)
+                .where(CheckItem.list_id.in_(list_ids))
+            )
+            for itm in res.scalars().all():
+                ids.add(itm.id)
+        return list(ids)
 
     async def get_current_task(self) -> Optional[Dict[str, Any]]:
         task_id = await self.lock_manager.get_current_task_id()
@@ -328,7 +383,7 @@ class CheckExecutionService:
 
         if check_result.status == "running":
             check_result.status = "cancelled"
-            check_result.end_time = datetime.utcnow()
+            check_result.end_time = get_now()
             await self.db.commit()
             await self.progress_tracker.update_progress(result_id, 0, "检查已取消")
             return True
@@ -340,94 +395,7 @@ class CheckExecutionService:
 
         return False
 
-    # ==================== Flattening Helper ====================
-    async def _get_flattened_check_items(self, rule_id: int) -> List[CheckItem]:
-        rule = await self._get_rule(rule_id)
-        if not rule: return []
-        
-        result = await self.db.execute(
-            select(CheckRule)
-            .options(selectinload(CheckRule.check_item_links))
-            .where(CheckRule.id == rule_id)
-        )
-        rule_with_links = result.scalar_one_or_none()
-        if not rule_with_links: return []
 
-        item_ids = {link.check_item_id for link in rule_with_links.check_item_links if link.check_item_id}
-        list_ids = {link.check_item_list_id for link in rule_with_links.check_item_links if link.check_item_list_id}
-        
-        if list_ids:
-            # fetch items from those lists
-            lists_res = await self.db.execute(
-                select(CheckItemList)
-                .options(selectinload(CheckItemList.items))
-                .where(CheckItemList.id.in_(list_ids))
-            )
-            for lst in lists_res.scalars().all():
-                for itm in lst.items:
-                    item_ids.add(itm.id)
-                    
-        if not item_ids: return []
-        final_res = await self.db.execute(select(CheckItem).where(CheckItem.id.in_(item_ids)))
-        return list(final_res.scalars().all())
-
-    async def _get_flattened_communications(self, rule_id: int) -> List[Communication]:
-        rule = await self._get_rule(rule_id)
-        if not rule: return []
-        
-        result = await self.db.execute(
-            select(CheckRule)
-            .options(selectinload(CheckRule.communication_links))
-            .where(CheckRule.id == rule_id)
-        )
-        rule_with_links = result.scalar_one_or_none()
-        if not rule_with_links: return []
-
-        comm_ids = {link.communication_id for link in rule_with_links.communication_links if link.communication_id}
-        group_ids = {link.communication_group_id for link in rule_with_links.communication_links if link.communication_group_id}
-        
-        if group_ids:
-            # group -> communications
-            groups_res = await self.db.execute(
-                select(CommunicationGroup)
-                .options(selectinload(CommunicationGroup.communications))
-                .where(CommunicationGroup.id.in_(group_ids))
-            )
-            for grp in groups_res.scalars().all():
-                for comm in grp.communications:
-                    comm_ids.add(comm.id)
-                    
-        if not comm_ids: return []
-        final_res = await self.db.execute(select(Communication).where(Communication.id.in_(comm_ids)))
-        return list(final_res.scalars().all())
-
-    async def _get_flattened_snapshots(self, rule_id: int) -> List[Snapshot]:
-        rule = await self._get_rule(rule_id)
-        if not rule: return []
-        
-        result = await self.db.execute(
-            select(CheckRule)
-            .options(selectinload(CheckRule.snapshot_links))
-            .where(CheckRule.id == rule_id)
-        )
-        rule_with_links = result.scalar_one_or_none()
-        if not rule_with_links: return []
-
-        snap_ids = {link.snapshot_id for link in rule_with_links.snapshot_links if link.snapshot_id}
-        group_ids = {link.snapshot_group_id for link in rule_with_links.snapshot_links if link.snapshot_group_id}
-        
-        # We need to load SnapshotGroup.snapshots if they exist
-        # Wait, snapshot groups don't have "snapshots" direct links, they have Snapshot records where group_id = group_id
-        if group_ids:
-            snaps_res = await self.db.execute(
-                select(Snapshot).where(Snapshot.group_id.in_(group_ids))
-            )
-            for snap in snaps_res.scalars().all():
-                snap_ids.add(snap.id)
-
-        if not snap_ids: return []
-        final_res = await self.db.execute(select(Snapshot).where(Snapshot.id.in_(snap_ids)))
-        return list(final_res.scalars().all())
 
     # ==================== 私有方法 ====================
     async def _get_rule(self, rule_id: int) -> Optional[CheckRule]:
@@ -439,14 +407,49 @@ class CheckExecutionService:
         return result.scalar_one_or_none()
 
     async def _get_any_environment_data(self, snapshot_ids: List[int], comm_id: int, item_id: int) -> Optional[EnvironmentData]:
-        # match any snapshot instance that belongs to given snapshots, comm_id, and has env data for item_id
-        q = select(EnvironmentData).join(SnapshotInstance).where(
+        # 1. 先查找匹配的快照实例 ID (这些 ID 是唯一的，结果集很小)
+        instance_q = select(SnapshotInstance).where(
             SnapshotInstance.snapshot_id.in_(snapshot_ids),
-            SnapshotInstance.communication_id == comm_id,
+            SnapshotInstance.communication_id == comm_id
+        ).order_by(SnapshotInstance.id.desc())
+        instance_res = await self.db.execute(instance_q)
+        instances = instance_res.scalars().all()
+        
+        if not instances:
+            return None
+            
+        instance_ids = [inst.id for inst in instances]
+        instance_map = {inst.id: inst for inst in instances}
+
+        # 2. 从环境数据表中通过实例 ID 查找
+        q = select(EnvironmentData).where(
+            EnvironmentData.snapshot_instance_id.in_(instance_ids),
             EnvironmentData.check_item_id == item_id
         ).order_by(EnvironmentData.created_at.desc()).limit(1)
         res = await self.db.execute(q)
-        return res.scalar_one_or_none()
+        env_data = res.scalar_one_or_none()
+        
+        if not env_data:
+            return None
+            
+        # 3. 如果数据在文件中，动态加载
+        if env_data.has_file_data:
+            inst = instance_map.get(env_data.snapshot_instance_id)
+            if inst and inst.data_path:
+                import os
+                import json
+                if os.path.exists(inst.data_path):
+                    try:
+                        with open(inst.data_path, 'r', encoding='utf-8') as f:
+                            all_data = json.load(f)
+                            # 从文件中提取当前检查项的数据
+                            env_data.data_value = all_data.get(str(item_id))
+                    except Exception as e:
+                        print(f"警告: 加载快照文件失败 {inst.data_path} - {e}")
+                else:
+                    print(f"警告: 快照文件不存在 {inst.data_path}")
+                    
+        return env_data
 
     async def _create_ssh_client(self, communication: Communication) -> SSHClientWrapper:
         # 处理密钥库引用
